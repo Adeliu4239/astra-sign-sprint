@@ -17,9 +17,11 @@ export default defineConfig({
     video: "off",
     screenshot: "off",
   },
-  projects: [
-    { name: "desktop-chrome", use: { ...devices["Desktop Chrome"] } },
-  ],
+  // E2E_BROWSERS=chromium,firefox,webkit to run more engines (default: chromium).
+  projects: (process.env.E2E_BROWSERS ?? "chromium").split(",").map((b) => {
+    const device = { chromium: "Desktop Chrome", firefox: "Desktop Firefox", webkit: "Desktop Safari" }[b.trim()] ?? "Desktop Chrome";
+    return { name: b.trim(), use: { ...devices[device] } };
+  }),
   webServer: isRemote
     ? undefined
     : { command: "npm run dev", url: baseURL, reuseExistingServer: true, timeout: 120_000 },

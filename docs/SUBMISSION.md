@@ -54,6 +54,7 @@ FileSign is a self-service agreement-signing workflow for a company that opens o
   - `npm run typecheck` → pass · `npm run lint` → pass · `npm test` → 33/33 pass · `npm run build` → pass
   - `npm run test:e2e` (local) → 7/7 pass
   - `E2E_BASE_URL=https://astra-sign-sprint.vercel.app npm run test:e2e` → **7/7 pass**
+  - `E2E_BROWSERS=chromium,webkit,firefox E2E_BASE_URL=https://astra-sign-sprint.vercel.app npm run test:e2e` → **21/21 pass** (Chromium, WebKit/Safari engine, Firefox)
 - **Production scenario (automated):** a freshly generated 3-page PDF (Letter, A4, and a /Rotate 90 page) is uploaded → signature placed on **page 2** and a date on the rotated page 3 → placement survives a refresh → link created → signed in a separate, cookie-less browser context (drawn signature, double-click submit) → the case shows Completed on the case page and dashboard → the downloaded PDF has 4 pages, page 1 untouched, and the page-2 signature image lies inside the placed rectangle (checked by parsing the PDF content stream) → link reuse returns 409, the original becomes 410, and the event log has all events.
 - Additional production E2E: non-PDF rejected with a message; invalid/incomplete link messages; a 9 MB PDF via chunked upload with streamed signed download; phone-viewport signer with a typed signature; revoke → link blocked → restart issues a new link; cross-workspace access denied.
 - **Visual check:** stamped pages rendered with PDF.js. The signature sits on the "Client signature" line on page 2, and the date reads upright on the rotated page.

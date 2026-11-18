@@ -46,8 +46,8 @@ Capture verified deployed URL, git SHA, test results and remaining limitations i
 | E2E: revoke → link blocked (409) → restart with same fields → new link | ″ | pass | pass |
 | E2E: other workspace gets 404 for case and PDF; no session gets 401 | ″ | pass | pass |
 
-Production runs use `E2E_BASE_URL=https://astra-sign-sprint.vercel.app npm run test:e2e`. Traces, videos and screenshots are disabled so signer tokens never land in test artifacts.
+Production runs use `E2E_BASE_URL=https://astra-sign-sprint.vercel.app npm run test:e2e`. Cross-engine run: `E2E_BROWSERS=chromium,webkit,firefox E2E_BASE_URL=https://astra-sign-sprint.vercel.app npm run test:e2e` → **21/21 pass** (2026-11-18 18:48 UTC), locally WebKit + Firefox 14/14. Traces, videos and screenshots are disabled so signer tokens never land in test artifacts.
 
 Robustness checks run outside the suite (scripts in the session, results rendered with `scripts/render-pdf-page.mjs`): Chrome-generated PDF (object streams, embedded fonts), AcroForm PDF, CropBox-offset PDF and owner-password-encrypted PDF all stamp correctly.
 
-**Not covered by automation:** real iOS Safari/WebKit (only Chromium mobile emulation), screen-reader pass, and real-world scanned PDFs (wasm image decoders are configured but not exercised with a JBIG2 sample).
+**Not covered by automation:** a physical iOS/Android device (WebKit desktop engine and mobile viewport emulation are covered), screen-reader pass, and real-world scanned PDFs (wasm image decoders are configured but not exercised with a JBIG2 sample).

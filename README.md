@@ -43,6 +43,7 @@ npm run dev                    # http://localhost:3000
 npm run typecheck && npm run lint && npm test   # unit tests (coordinates, stamping, state machine)
 npm run test:e2e                                # Playwright suite (7 tests) against local dev server
 E2E_BASE_URL=https://<deployment> npm run test:e2e   # same suite against a deployment
+E2E_BROWSERS=chromium,webkit,firefox npm run test:e2e  # all three engines
 npx tsx scripts/make-test-pdf.ts out.pdf        # fresh synthetic 3-page PDF (mixed sizes, rotated page)
 ```
 
