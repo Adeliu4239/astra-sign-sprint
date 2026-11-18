@@ -6,14 +6,16 @@ import { apiError } from "@/lib/format";
 
 export function NewCaseForm({ compact = false, initialError = null }: { compact?: boolean; initialError?: string | null }) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [clientName, setClientName] = useState("");
-  const [clientEmail, setClientEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    // Read from the DOM (uncontrolled inputs) so values typed before hydration are kept.
+    const data = new FormData(e.currentTarget);
+    const title = String(data.get("title") ?? "");
+    const clientName = String(data.get("clientName") ?? "");
+    const clientEmail = String(data.get("clientEmail") ?? "");
     setBusy(true);
     setError(null);
     try {
@@ -35,15 +37,15 @@ export function NewCaseForm({ compact = false, initialError = null }: { compact?
     <form onSubmit={submit} method="post" action="/api/cases" className={`grid gap-3 ${compact ? "" : "sm:grid-cols-3"}`} data-testid="new-case-form">
       <label className="text-sm">
         <span className="mb-1 block font-medium">Case / file name</span>
-        <input className="input" required maxLength={120} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="MIND Test Case 001" name="title" />
+        <input className="input" required maxLength={120} placeholder="MIND Test Case 001" name="title" />
       </label>
       <label className="text-sm">
         <span className="mb-1 block font-medium">Client name</span>
-        <input className="input" required maxLength={120} value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Taylor Example" name="clientName" />
+        <input className="input" required maxLength={120} placeholder="Taylor Example" name="clientName" />
       </label>
       <label className="text-sm">
         <span className="mb-1 block font-medium">Client email</span>
-        <input className="input" required type="email" maxLength={200} value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="taylor@example.com" name="clientEmail" />
+        <input className="input" required type="email" maxLength={200} placeholder="taylor@example.com" name="clientEmail" />
       </label>
       <div className={`flex items-center gap-3 ${compact ? "" : "sm:col-span-3"}`}>
         <button type="submit" className="btn-primary" disabled={busy}>
