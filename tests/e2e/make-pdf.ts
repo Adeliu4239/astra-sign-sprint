@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { PDFDocument, StandardFonts, degrees, rgb } from "pdf-lib";
 
 /**
@@ -46,5 +47,12 @@ export async function makeAgreementPdf(seed = Date.now().toString(36)): Promise<
   p3.setRotation(degrees(90));
   p3.drawText("SCHEDULE A — FEES (rotated page)", { x: 72, y: 720, size: 14, font: bold });
 
+  return Buffer.from(await doc.save());
+}
+
+/** A valid multi-page PDF padded with an incompressible attachment to exceed single-request limits. */
+export async function makeLargePdf(megabytes: number): Promise<Buffer> {
+  const doc = await PDFDocument.load(await makeAgreementPdf(`large-${Date.now().toString(36)}`));
+  await doc.attach(randomBytes(megabytes * 1024 * 1024), "padding.bin", { mimeType: "application/octet-stream" });
   return Buffer.from(await doc.save());
 }

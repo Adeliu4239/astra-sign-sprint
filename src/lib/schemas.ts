@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // Vercel functions accept ~4.5 MB request bodies.
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+/** Files above this go through chunked upload (Vercel limits request bodies to ~4.5 MB). */
+export const SINGLE_UPLOAD_MAX_BYTES = 3 * 1024 * 1024;
+export const UPLOAD_CHUNK_BYTES = 3 * 1024 * 1024;
 export const MAX_PAGES = 300;
 export const MAX_FIELDS = 60;
 export const MAX_SIGNATURE_PNG_BYTES = 600 * 1024;
@@ -46,3 +49,9 @@ export type SubmitSignatureInput = z.infer<typeof submitSignatureSchema>;
 
 export const CONSENT_TEXT =
   "I agree to use electronic records and signatures for this document. I have reviewed the document, and I intend my electronic signature to have the same effect as my handwritten signature.";
+
+export const startUploadSchema = z.object({
+  filename: z.string().trim().min(1).max(255),
+  mime: z.string().max(100).default("application/pdf"),
+  size: z.number().int().positive().max(MAX_UPLOAD_BYTES, `The limit is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`),
+});

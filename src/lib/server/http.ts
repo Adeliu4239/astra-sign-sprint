@@ -16,12 +16,27 @@ export function originFromHeaders(h: Headers): string {
   return `${proto}://${host}`;
 }
 
+/**
+ * Streams the PDF in chunks: Vercel rejects buffered function responses above ~4.5 MB but
+ * accepts streamed ones (measured on this project's deployment).
+ */
 export function pdfResponse(content: Uint8Array, filename: string, download: boolean) {
   const safe = filename.replace(/[^\w.\- ()]+/g, "_");
-  return new Response(new Uint8Array(content), {
+  const CHUNK = 256 * 1024;
+  let offset = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= content.byteLength) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(new Uint8Array(content.subarray(offset, offset + CHUNK)));
+      offset += CHUNK;
+    },
+  });
+  return new Response(body, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Length": String(content.byteLength),
       "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${safe}"`,
       "Cache-Control": "private, no-store",
       "X-Robots-Tag": "noindex",

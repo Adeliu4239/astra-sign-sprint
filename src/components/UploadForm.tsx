@@ -3,7 +3,33 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiError, formatBytes } from "@/lib/format";
-import { MAX_UPLOAD_BYTES } from "@/lib/schemas";
+import { MAX_UPLOAD_BYTES, SINGLE_UPLOAD_MAX_BYTES } from "@/lib/schemas";
+
+async function uploadChunked(caseId: string, file: File, onProgress: (pct: number) => void) {
+  const start = await fetch(`/api/cases/${caseId}/uploads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: file.name, mime: file.type || "application/pdf", size: file.size }),
+  });
+  if (!start.ok) throw new Error(await apiError(start));
+  const { uploadId, chunkSize, chunkCount } = (await start.json()) as { uploadId: string; chunkSize: number; chunkCount: number };
+  for (let i = 0; i < chunkCount; i++) {
+    const part = file.slice(i * chunkSize, Math.min(file.size, (i + 1) * chunkSize));
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        res = await fetch(`/api/uploads/${uploadId}/chunks/${i}`, { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: part });
+        if (res.ok) break;
+      } catch {
+        res = null;
+      }
+    }
+    if (!res?.ok) throw new Error(res ? await apiError(res) : "Network error while uploading. Please try again.");
+    onProgress(Math.round(((i + 1) / chunkCount) * 90));
+  }
+  const done = await fetch(`/api/uploads/${uploadId}/complete`, { method: "POST" });
+  if (!done.ok) throw new Error(await apiError(done));
+}
 
 export function UploadForm({ caseId, replacing = false }: { caseId: string; replacing?: boolean }) {
   const router = useRouter();
@@ -11,6 +37,7 @@ export function UploadForm({ caseId, replacing = false }: { caseId: string; repl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
 
   const upload = async (file: File | undefined) => {
     if (!file) return;
@@ -25,15 +52,21 @@ export function UploadForm({ caseId, replacing = false }: { caseId: string; repl
     }
     setBusy(true);
     try {
-      const body = new FormData();
-      body.append("file", file);
-      const res = await fetch(`/api/cases/${caseId}/document`, { method: "POST", body });
-      if (!res.ok) throw new Error(await apiError(res));
+      if (file.size > SINGLE_UPLOAD_MAX_BYTES) {
+        setProgress(0);
+        await uploadChunked(caseId, file, setProgress);
+      } else {
+        const body = new FormData();
+        body.append("file", file);
+        const res = await fetch(`/api/cases/${caseId}/document`, { method: "POST", body });
+        if (!res.ok) throw new Error(await apiError(res));
+      }
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setBusy(false);
+      setProgress(null);
       if (input.current) input.current.value = "";
     }
   };
@@ -49,7 +82,7 @@ export function UploadForm({ caseId, replacing = false }: { caseId: string; repl
     return (
       <div className="flex flex-col items-end gap-1">
         <label className="btn-secondary cursor-pointer">
-          {busy ? "Uploading…" : "Replace PDF"}
+          {busy ? (progress !== null && progress < 90 ? `Uploading ${progress}%` : "Uploading…") : "Replace PDF"}
           <input ref={input} type="file" accept="application/pdf,.pdf" className="sr-only" disabled={busy} onChange={(e) => upload(e.target.files?.[0])} />
         </label>
         {error && <p role="alert" className="max-w-xs text-right text-xs text-red-600">{error}</p>}
@@ -74,7 +107,7 @@ export function UploadForm({ caseId, replacing = false }: { caseId: string; repl
           drag ? "border-indigo-500 bg-indigo-50" : "border-slate-300 bg-white hover:border-indigo-400"
         }`}
       >
-        <span className="text-base font-medium">{busy ? "Uploading and checking PDF…" : "Drop the agreement PDF here, or click to choose"}</span>
+        <span className="text-base font-medium">{busy ? (progress !== null && progress < 90 ? `Uploading… ${progress}%` : "Uploading and checking PDF…") : "Drop the agreement PDF here, or click to choose"}</span>
         <span className="text-xs text-slate-500">PDF only · up to {formatBytes(MAX_UPLOAD_BYTES)} · any number of pages</span>
         <input
           ref={input}

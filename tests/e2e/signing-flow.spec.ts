@@ -1,7 +1,7 @@
 import { inflateSync } from "node:zlib";
 import { expect, test, type Page } from "@playwright/test";
 import { PDFArray, PDFDocument, PDFName, PDFRawStream, type PDFRef } from "pdf-lib";
-import { makeAgreementPdf } from "./make-pdf";
+import { makeAgreementPdf, makeLargePdf } from "./make-pdf";
 
 async function pageContent(bytes: Buffer, pageIndex: number): Promise<string> {
   const doc = await PDFDocument.load(bytes);
@@ -160,4 +160,48 @@ test("rejects a non-PDF upload with a helpful message", async ({ page }) => {
 test("invalid signing link shows a clear message", async ({ page }) => {
   await page.goto("/sign/this-token-does-not-exist-aaaaaaaaaaaaaaaaaaaaaaaa");
   await expect(page.getByTestId("signer-notice")).toContainText("not valid");
+});
+
+test("large PDF (> 4.5 MB) uploads in chunks and the signed copy downloads", async ({ page, browser }) => {
+  const pdf = await makeLargePdf(9);
+  expect(pdf.byteLength).toBeGreaterThan(9 * 1024 * 1024);
+  await page.goto("/");
+  await page.getByTestId("enter-demo").click();
+  await page.getByPlaceholder("MIND Test Case 001").fill("Large file case");
+  await page.getByPlaceholder("Taylor Example").fill("Robin Sample");
+  await page.getByPlaceholder("taylor@example.com").fill("robin@example.com");
+  await page.getByRole("button", { name: "Create case" }).click();
+  await expect(page.getByTestId("case-title")).toBeVisible();
+  await page.getByTestId("pdf-input").setInputFiles({ name: "large-agreement.pdf", mimeType: "application/pdf", buffer: pdf });
+  await expect(page.getByTestId("document-meta")).toContainText("3 pages", { timeout: 90_000 });
+  await page.getByTestId("tool-signature").click();
+  await clickOnPage(page, 1, 0.5, 0.5);
+  await expect(page.getByTestId("save-state")).toHaveText("Saved");
+  await page.getByTestId("create-link").click();
+  const signerUrl = await page.getByTestId("signer-url").inputValue();
+  const token = signerUrl.split("/sign/")[1]!;
+
+  const signerCtx = await browser.newContext();
+  const doc = await signerCtx.request.get(`/api/sign/${token}/document`);
+  expect(doc.status()).toBe(200);
+  expect((await doc.body()).byteLength).toBe(pdf.byteLength);
+  const res = await signerCtx.request.post(`/api/sign/${token}/submit`, {
+    data: {
+      consent: true,
+      signerName: "Robin Sample",
+      method: "typed",
+      signaturePng: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGNgYGD4z8DAwMAAAAgAAQ3cs1YAAAAASUVORK5CYII=",
+    },
+  });
+  expect(res.status()).toBe(201);
+  await signerCtx.close();
+
+  await page.reload();
+  await expect(page.getByTestId("status-badge")).toHaveText("Completed");
+  const href = await page.getByTestId("download-signed").getAttribute("href");
+  const signed = await page.request.get(href!);
+  expect(signed.status()).toBe(200);
+  const bytes = Buffer.from(await signed.body());
+  expect(bytes.byteLength).toBeGreaterThan(9 * 1024 * 1024);
+  expect((await PDFDocument.load(bytes)).getPageCount()).toBe(4);
 });

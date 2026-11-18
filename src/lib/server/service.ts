@@ -10,6 +10,7 @@ import {
   MAX_PAGES,
   MAX_SIGNATURE_PNG_BYTES,
   MAX_UPLOAD_BYTES,
+  UPLOAD_CHUNK_BYTES,
   type CreateCaseInput,
   type FieldInput,
   type SubmitSignatureInput,
@@ -259,6 +260,57 @@ export async function uploadDocument(
     });
     return { documentId: doc!.id, requestId: req!.id, pageCount: info.pageCount };
   });
+}
+
+/* ------------------------------------------------------- chunked uploads */
+
+export async function startChunkedUpload(workspaceId: string, caseId: string, filename: string, mime: string, size: number) {
+  if (size > MAX_UPLOAD_BYTES) throw new HttpError(413, `The limit is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`);
+  if (!/\.pdf$/i.test(filename) && mime !== "application/pdf") throw new HttpError(415, "Only PDF files are supported.");
+  const db = sql();
+  await loadCase(db, workspaceId, caseId);
+  // Opportunistic cleanup of abandoned sessions.
+  await db`delete from upload_sessions where created_at < now() - interval '1 day'`;
+  const chunkCount = Math.ceil(size / UPLOAD_CHUNK_BYTES);
+  const [u] = await db<{ id: string }[]>`
+    insert into upload_sessions (case_id, filename, mime, total_bytes, chunk_count)
+    values (${caseId}, ${filename}, ${mime}, ${size}, ${chunkCount}) returning id`;
+  return { uploadId: u!.id, chunkSize: UPLOAD_CHUNK_BYTES, chunkCount };
+}
+
+async function loadUploadSession(workspaceId: string, uploadId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(uploadId)) throw new HttpError(404, "Upload not found");
+  const [u] = await sql()<{ id: string; case_id: string; filename: string; mime: string; total_bytes: number; chunk_count: number }[]>`
+    select u.id, u.case_id, u.filename, u.mime, u.total_bytes, u.chunk_count from upload_sessions u
+    join cases c on c.id = u.case_id where u.id = ${uploadId} and c.workspace_id = ${workspaceId}`;
+  if (!u) throw new HttpError(404, "Upload not found or expired. Please start the upload again.");
+  return u;
+}
+
+export async function putUploadChunk(workspaceId: string, uploadId: string, index: number, data: Uint8Array) {
+  const u = await loadUploadSession(workspaceId, uploadId);
+  if (!Number.isInteger(index) || index < 0 || index >= u.chunk_count) throw new HttpError(400, "Invalid chunk index");
+  const expected = index === u.chunk_count - 1 ? u.total_bytes - index * UPLOAD_CHUNK_BYTES : UPLOAD_CHUNK_BYTES;
+  if (data.byteLength !== expected) throw new HttpError(400, "Chunk size mismatch. Please retry the upload.");
+  await sql()`
+    insert into upload_chunks (upload_id, idx, data) values (${uploadId}, ${index}, ${Buffer.from(data)})
+    on conflict (upload_id, idx) do update set data = excluded.data`;
+}
+
+export async function completeChunkedUpload(workspaceId: string, uploadId: string, meta: RequestMeta) {
+  const u = await loadUploadSession(workspaceId, uploadId);
+  const chunks = await sql()<{ idx: number; data: Buffer }[]>`
+    select idx, data from upload_chunks where upload_id = ${uploadId} order by idx`;
+  if (chunks.length !== u.chunk_count || chunks.some((c, i) => c.idx !== i)) {
+    throw new HttpError(400, "Some parts of the file are missing. Please retry the upload.");
+  }
+  const bytes = new Uint8Array(Buffer.concat(chunks.map((c) => c.data)));
+  if (bytes.byteLength !== u.total_bytes) throw new HttpError(400, "Uploaded size does not match. Please retry the upload.");
+  try {
+    return await uploadDocument(workspaceId, u.case_id, bytes, u.filename, u.mime, meta);
+  } finally {
+    await sql()`delete from upload_sessions where id = ${uploadId}`;
+  }
 }
 
 /** Admin-only document read; scoped through the case's workspace. */
