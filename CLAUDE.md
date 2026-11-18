@@ -37,14 +37,19 @@ We are optimizing for: (1) unknown-PDF happy path works; (2) convincing, low-fri
 ## Stack preference (not dogma)
 Next.js App Router + TypeScript + Tailwind; PostgreSQL + storage (Supabase is acceptable); PDF.js/react-pdf for previews, pdf-lib for stamping; Resend optional for email; Vercel for HTTPS deployment; Playwright for critical browser flows. Reuse the chosen stack and avoid rewrites once the vertical slice works.
 
-## Git process and deployment
-- `main`: deployable, evaluator-tested source; protect it from speculative changes.
-- `develop`: integration branch for short-lived development, if parallel work justifies it.
-- `feat/<scope>`, `fix/<scope>`, `docs/<scope>`: short-lived changes; merge only after quality checks.
-- With <48 hours left, **prefer a small number of sequential changes** over complicated worktree/branch orchestration. Do not force PR ceremony where it slows delivery.
-- Commit frequently with meaningful messages. Verify `git status`, tests and deployment before final merge.
-- Deploy a working vertical slice as early as possible. Validate the **production URL** (not only localhost) in a fresh browser.
-- **Stop all commits/pushes before deadline**. Capture final commit SHA, deployed URL, and submitted response. Do not commit after deadline even to fix docs.
+## Git process, review and release (mandatory, effective 2026-11-18)
+Full procedure: `docs/GIT_WORKFLOW.md`. These rules override any older guidance in this file.
+- **`main` is production.** Never develop on, commit to, or push to `main` directly. That includes docs-only changes.
+- **One scoped task per branch**, cut from an up-to-date `main`: `feat/`, `fix/`, `docs/`, `test/` or `chore/` + `<short-purpose>`. Delete the branch after merge. No long-lived branches.
+- **Small commits** with Conventional Commit prefixes. No unrelated changes in a branch.
+- **Every change goes through a PR** using `.github/pull_request_template.md`: summary, risk, rollback, and the exact commands run with their real results.
+- **Required checks before asking for review:** `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. Any change to the critical flow (upload → fields → link → sign → signed PDF → status) also needs `npm run test:e2e` locally.
+- **Merge only with the user's explicit approval**, by squash merge. Never auto-merge. Never force-push, `reset --hard`, rewrite history, or move/delete tags. Tag `round2-validated` is the frozen validated baseline.
+- **No silent production deploys.** Deploy only from a clean `main` at the merged SHA, only after the user approves the merge (`vercel deploy --prod --yes`). Then verify that the deployment's `githubCommitSha` equals `main` HEAD and run `E2E_BASE_URL=https://astra-sign-sprint.vercel.app npm run test:e2e`. Report both.
+- **No feature expansion without explicit approval.** Proposals go in a doc or the PR description first.
+- **Rollback:** promote the last known-good deployment (`vercel rollback` / `vercel promote <deployment-url>`) and fix forward with a `git revert` PR. Never reset `main`.
+- **Data and artifacts:** synthetic people and documents only. Never commit `.env*` (except `.env.example`), signer tokens or links, screenshots that show a link, real personal data, raw test output, or generated PDFs. Never mutate or delete stored signed artifacts or completed requests.
+- **Deadline cutoff:** no merges, commits, pushes or deploys at or after **2026-11-20 01:21 AM EST**. Stop feature work early enough to verify production; the final submission SHA is `main` HEAD as deployed.
 
 ## Practical command workflow
 1. Read `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/DELIVERY_PLAN.md` and inspect repo.

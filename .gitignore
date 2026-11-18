@@ -30,8 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files: never commit real values; the placeholder template is tracked
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -39,8 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-.vercel
-*.tsbuildinfo
-next-env.d.ts
+# generated / transient
 /public/pdfjs/
 /qa/artifacts/
+/test-results/
+/playwright-report/
+/blob-report/
