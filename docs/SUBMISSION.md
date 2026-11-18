@@ -49,7 +49,7 @@ FileSign is a self-service agreement-signing workflow for a company that opens o
 - **AI tools used:** Claude Code (Anthropic Claude) as the coding assistant for implementation, tests and docs. The product itself uses no AI.
 
 ## Verification
-- **Tested at:** 2026-11-18 18:44 UTC (13:44 EST), production URL, code SHA `0cdff55`.
+- **Tested at:** first full production run 2026-11-18 18:44 UTC at `0cdff55`; re-run at deployed `53e613e` (application code identical: `0cdff55..53e613e` changes only docs and `playwright.config.ts`). An independent QA pass followed at 20:11–20:20 UTC on deployed `53e613e`; see [`docs/FINAL_QA.md`](FINAL_QA.md).
 - **Commands and results:**
   - `npm run typecheck` → pass · `npm run lint` → pass · `npm test` → 33/33 pass · `npm run build` → pass
   - `npm run test:e2e` (local) → 7/7 pass
@@ -59,4 +59,5 @@ FileSign is a self-service agreement-signing workflow for a company that opens o
 - Additional production E2E: non-PDF rejected with a message; invalid/incomplete link messages; a 9 MB PDF via chunked upload with streamed signed download; phone-viewport signer with a typed signature; revoke → link blocked → restart issues a new link; cross-workspace access denied.
 - **Visual check:** stamped pages rendered with PDF.js. The signature sits on the "Client signature" line on page 2, and the date reads upright on the rotated page.
 - **Known issues:** see limitations above.
-- **Git commit SHA (final):** recorded at submission time in the final hand-off message; later commits after `0cdff55` are docs-only unless noted.
+- **Independent QA (2026-11-18, production):** two new PDFs (5-page mixed sizes with CropBox offset, signed on p4; 3-page Chromium-generated, signed on p3 from a phone viewport) went end to end. 30 adversarial checks passed (bad, corrupt and password PDFs, 5 concurrent submits → exactly one 201, revoke/restart, expiry (local), cross-workspace 404s, token never in a request URL). No P0 found. Full matrix: `docs/FINAL_QA.md`.
+- **Git commit SHA (final):** the last commit before the deadline. Production is redeployed from that exact commit; check with the Vercel deployment's `githubCommitSha`. Application code is unchanged since `0cdff55`; later commits are docs, tests and QA scripts.

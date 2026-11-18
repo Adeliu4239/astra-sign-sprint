@@ -30,7 +30,9 @@ Capture verified deployed URL, git SHA, test results and remaining limitations i
 
 ---
 
-## Results (2026-11-18, code SHA `0cdff55`)
+## Results (2026-11-18, code SHA `0cdff55`; application code unchanged in the deployed `53e613e`)
+
+See also the independent production QA in [`FINAL_QA.md`](FINAL_QA.md).
 
 | Check | Command | Local | Production |
 |---|---|---|---|
