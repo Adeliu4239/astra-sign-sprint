@@ -82,6 +82,9 @@ export function LinkPanel({ requestId, url, clientName, clientEmail, caseTitle, 
         </button>
       </div>
       {error && <p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
+      <p className="mt-3 text-xs text-slate-500">
+        Trying it out? Paste the link into a private/incognito window to sign as the client. This page updates to <strong>Completed</strong> automatically.
+      </p>
     </div>
   );
 }

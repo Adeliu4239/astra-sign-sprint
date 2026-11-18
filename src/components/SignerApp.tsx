@@ -26,6 +26,41 @@ interface Props {
 
 type Phase = { kind: "form" } | { kind: "submitting" } | { kind: "done"; completedAt: string };
 
+/** Downloads the signed PDF with the token in a header (never in a URL). */
+export function SignedCopyButton({ token, filename }: { token: string; filename: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const download = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/sign/document?which=signed&download=1", { headers: { "x-signing-token": token } });
+      if (!res.ok) throw new Error(await apiError(res));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename.replace(/\.pdf$/i, "") + " (signed).pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-6 flex flex-col items-center gap-2">
+      <button type="button" className="btn-primary" onClick={download} disabled={busy} data-testid="signer-download">
+        {busy ? "Preparing download…" : "Download signed copy"}
+      </button>
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 export function SignerApp({ token, clientName, filename, pageCount, fields }: Props) {
   const [name, setName] = useState(clientName);
   const [signature, setSignature] = useState<SignatureValue | null>(null);
@@ -45,9 +80,9 @@ export function SignerApp({ token, clientName, filename, pageCount, fields }: Pr
     setError(null);
     setPhase({ kind: "submitting" });
     try {
-      const res = await fetch(`/api/sign/${token}/submit`, {
+      const res = await fetch(`/api/sign/submit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-signing-token": token },
         body: JSON.stringify({ consent: true, signerName: name.trim(), method: signature!.method, signaturePng: signature!.dataUrl }),
       });
       if (!res.ok) {
@@ -79,9 +114,7 @@ export function SignerApp({ token, clientName, filename, pageCount, fields }: Pr
           Thank you, {name.trim()}. Your signature was applied to <strong>{filename}</strong> at {formatUtc(phase.completedAt)}. The sender has been
           notified in their dashboard.
         </p>
-        <a className="btn-primary mt-6" href={`/api/sign/${token}/document?which=signed&download=1`} data-testid="signer-download">
-          Download signed copy
-        </a>
+        <SignedCopyButton token={token} filename={filename} />
       </div>
     );
   }
@@ -91,11 +124,22 @@ export function SignerApp({ token, clientName, filename, pageCount, fields }: Pr
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0">
-        <p className="mb-3 text-sm text-slate-600">
-          Review all {pageCount} page{pageCount === 1 ? "" : "s"}. You will sign on page{sigPages.length === 1 ? "" : "s"} {sigPages.join(", ")}.
-        </p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-slate-600">
+            Review all {pageCount} page{pageCount === 1 ? "" : "s"}. You will sign on page{sigPages.length === 1 ? "" : "s"} {sigPages.join(", ")}.
+          </p>
+          {/* A scroll button, not an #anchor: the URL fragment holds the signing token. */}
+          <button
+            type="button"
+            className="btn-secondary text-xs lg:hidden"
+            onClick={() => document.getElementById("sign-form")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          >
+            Go to signature form ↓
+          </button>
+        </div>
         <PdfPages
-          url={`/api/sign/${token}/document`}
+          url="/api/sign/document"
+          httpHeaders={{ "x-signing-token": token }}
           renderOverlay={(page) =>
             fields
               .filter((f) => f.page_index === page.index)
@@ -131,6 +175,7 @@ export function SignerApp({ token, clientName, filename, pageCount, fields }: Pr
 
       <aside className="lg:sticky lg:top-4 lg:self-start">
         <form
+          id="sign-form"
           className="card flex flex-col gap-4 p-4"
           onSubmit={(e) => {
             e.preventDefault();

@@ -26,13 +26,16 @@ export interface PageInfo {
 
 interface Props {
   url: string;
+  /** Extra request headers (e.g. the signer token, which must never appear in a URL). */
+  httpHeaders?: Record<string, string>;
   renderOverlay?: (page: PageInfo) => ReactNode;
   onLoad?: (pages: PageInfo[]) => void;
   overlayClassName?: string;
   onPagePointerDown?: (page: PageInfo, e: React.PointerEvent<HTMLDivElement>) => void;
 }
 
-export function PdfPages({ url, renderOverlay, onLoad, overlayClassName, onPagePointerDown }: Props) {
+export function PdfPages({ url, httpHeaders, renderOverlay, onLoad, overlayClassName, onPagePointerDown }: Props) {
+  const headerKey = JSON.stringify(httpHeaders ?? {});
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pages, setPages] = useState<PageInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +53,7 @@ export function PdfPages({ url, renderOverlay, onLoad, overlayClassName, onPageP
         if (cancelled) return;
         task = pdfjs.getDocument({
           url,
+          httpHeaders: JSON.parse(headerKey) as Record<string, string>,
           // Runtime assets for non-embedded fonts, CJK encodings and JPX/JBIG2 (scanned) images.
           cMapUrl: "/pdfjs/cmaps/",
           cMapPacked: true,
@@ -79,7 +83,7 @@ export function PdfPages({ url, renderOverlay, onLoad, overlayClassName, onPageP
       cancelled = true;
       void task?.destroy();
     };
-  }, [url]);
+  }, [url, headerKey]);
 
   if (error) {
     return <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>;

@@ -68,7 +68,7 @@ test("unknown multi-page PDF: place signature on page 2, sign in a separate brow
   const urlInput = page.getByTestId("signer-url");
   await expect(urlInput).toBeVisible();
   const signerUrl = await urlInput.inputValue();
-  expect(signerUrl).toMatch(/\/sign\/[A-Za-z0-9_-]{40,}$/);
+  expect(signerUrl).toMatch(/\/sign#[A-Za-z0-9_-]{40,}$/);
   expect(new URL(signerUrl).origin).toBe(new URL(baseURL!).origin);
   await expect(page.getByTestId("status-badge")).toHaveText("Awaiting signature");
 
@@ -92,19 +92,25 @@ test("unknown multi-page PDF: place signature on page 2, sign in a separate brow
   await signer.getByTestId("submit-signature").dblclick(); // double click must not double-sign
   await expect(signer.getByTestId("signing-complete")).toBeVisible();
 
-  // Signer can download their copy.
-  const token = signerUrl.split("/sign/")[1]!;
-  const signerCopy = await signerCtx.request.get(`/api/sign/${token}/document?which=signed`);
+  // Signer can download their copy (token only ever sent in a header).
+  const token = signerUrl.split("#")[1]!;
+  const auth = { "x-signing-token": token };
+  const [download] = await Promise.all([signer.waitForEvent("download"), signer.getByTestId("signer-download").click()]);
+  expect(download.suggestedFilename()).toMatch(/\(signed\)\.pdf$/);
+  const signerCopy = await signerCtx.request.get(`/api/sign/document?which=signed`, { headers: auth });
   expect(signerCopy.status()).toBe(200);
+  expect((await signerCtx.request.get(`/api/sign/document?which=signed`)).status()).toBe(404);
 
   // 7. Link cannot be used again.
+  await signer.goto("about:blank");
   await signer.goto(signerUrl);
   await expect(signer.getByTestId("signer-notice")).toContainText("already been signed");
-  const replay = await signerCtx.request.post(`/api/sign/${token}/submit`, {
+  const replay = await signerCtx.request.post(`/api/sign/submit`, {
+    headers: auth,
     data: { consent: true, signerName: "Mallory", method: "typed", signaturePng: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==" },
   });
   expect(replay.status()).toBe(409);
-  const original = await signerCtx.request.get(`/api/sign/${token}/document`);
+  const original = await signerCtx.request.get(`/api/sign/document`, { headers: auth });
   expect(original.status()).toBe(410);
   await signerCtx.close();
 
@@ -158,8 +164,11 @@ test("rejects a non-PDF upload with a helpful message", async ({ page }) => {
 });
 
 test("invalid signing link shows a clear message", async ({ page }) => {
-  await page.goto("/sign/this-token-does-not-exist-aaaaaaaaaaaaaaaaaaaaaaaa");
+  await page.goto("/sign#this-token-does-not-exist-aaaaaaaaaaaaaaaaaaaaaaaa");
   await expect(page.getByTestId("signer-notice")).toContainText("not valid");
+  await page.goto("about:blank");
+  await page.goto("/sign");
+  await expect(page.getByTestId("signer-notice")).toContainText("incomplete");
 });
 
 test("large PDF (> 4.5 MB) uploads in chunks and the signed copy downloads", async ({ page, browser }) => {
@@ -179,13 +188,15 @@ test("large PDF (> 4.5 MB) uploads in chunks and the signed copy downloads", asy
   await expect(page.getByTestId("save-state")).toHaveText("Saved");
   await page.getByTestId("create-link").click();
   const signerUrl = await page.getByTestId("signer-url").inputValue();
-  const token = signerUrl.split("/sign/")[1]!;
+  const token = signerUrl.split("#")[1]!;
+  const auth = { "x-signing-token": token };
 
   const signerCtx = await browser.newContext();
-  const doc = await signerCtx.request.get(`/api/sign/${token}/document`);
+  const doc = await signerCtx.request.get(`/api/sign/document`, { headers: auth });
   expect(doc.status()).toBe(200);
   expect((await doc.body()).byteLength).toBe(pdf.byteLength);
-  const res = await signerCtx.request.post(`/api/sign/${token}/submit`, {
+  const res = await signerCtx.request.post(`/api/sign/submit`, {
+    headers: auth,
     data: {
       consent: true,
       signerName: "Robin Sample",

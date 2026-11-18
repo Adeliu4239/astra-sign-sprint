@@ -361,7 +361,7 @@ export async function saveFields(workspaceId: string, requestId: string, fields:
 /* ------------------------------------------------------- request lifecycle */
 
 export function signerUrl(origin: string, token: string) {
-  return `${origin.replace(/\/$/, "")}/sign/${token}`;
+  return `${origin.replace(/\/$/, "")}/sign#${token}`;
 }
 
 export async function sendRequest(workspaceId: string, requestId: string, meta: RequestMeta) {

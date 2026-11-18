@@ -43,3 +43,13 @@ export function pdfResponse(content: Uint8Array, filename: string, download: boo
     },
   });
 }
+
+export const SIGNING_TOKEN_HEADER = "x-signing-token";
+
+/**
+ * Signer tokens travel in the URL fragment (never sent to servers, so never in access logs or
+ * Referer) and reach the API only in this header.
+ */
+export function signingTokenFrom(req: Request): string {
+  return (req.headers.get(SIGNING_TOKEN_HEADER) ?? "").trim();
+}
