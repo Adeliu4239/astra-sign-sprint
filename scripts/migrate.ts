@@ -13,7 +13,8 @@ function loadEnvFile(file: string) {
 
 async function main() {
   loadEnvFile(path.join(process.cwd(), ".env.local"));
-  const url = process.env.DATABASE_URL;
+  // Prefer the direct (unpooled) URL: the advisory lock below is session-scoped.
+  const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
