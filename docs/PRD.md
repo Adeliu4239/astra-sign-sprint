@@ -10,24 +10,24 @@ Each company creates a case ('file') for a client, must obtain a signed standard
 
 ## Priority / acceptance criteria
 ### P0 — necessary to pass
-- [ ] Public HTTPS app and frictionless accessible test workspace (demo entry point or clearly displayed demo credentials).
-- [ ] Create case with client display name and test email, list/open case.
-- [ ] Upload an arbitrary PDF (document not supplied during development), safely validate extension/MIME/file signature/size; handle multi-page.
-- [ ] Preview PDF and manually place at least one **required signature** field on any page with visible confirmation. User can correct placement.
-- [ ] Create unique signing request; show public signer URL with copy button; admin can revisit it while pending.
-- [ ] External signer views all pages, accepts consent and signs using type or draw, then submits.
-- [ ] Server stamps signature into PDF using correct PDF page and coordinates; stores original and executed version separately.
-- [ ] Completed state is stored durably, visible to admin, signed PDF accessible/downloadable; signing link cannot perform another sign.
-- [ ] Refresh/navigation/server restart do not erase request or file.
-- [ ] One end-to-end local and one end-to-end **production** test using new synthetic multi-page PDF.
+- [x] Public HTTPS app and frictionless accessible test workspace (demo entry point or clearly displayed demo credentials).
+- [x] Create case with client display name and test email, list/open case.
+- [x] Upload an arbitrary PDF (document not supplied during development), safely validate extension/MIME/file signature/size; handle multi-page.
+- [x] Preview PDF and manually place at least one **required signature** field on any page with visible confirmation. User can correct placement.
+- [x] Create unique signing request; show public signer URL with copy button; admin can revisit it while pending.
+- [x] External signer views all pages, accepts consent and signs using type or draw, then submits.
+- [x] Server stamps signature into PDF using correct PDF page and coordinates; stores original and executed version separately.
+- [x] Completed state is stored durably, visible to admin, signed PDF accessible/downloadable; signing link cannot perform another sign.
+- [x] Refresh/navigation/server restart do not erase request or file.
+- [x] One end-to-end local and one end-to-end **production** test using new synthetic multi-page PDF.
 
 ### P1 — only after P0 green
-- [ ] Send request by email (with copy-link fallback).
+- [ ] Send request by email (with copy-link fallback). *(Partial: `mailto:` opens the admin's mail app with the link; no server-sent email.)*
 - [ ] Reusable template/reference PDF for recurring agreements.
-- [ ] Audit timeline + SHA-256 file hash + completion timestamp in UTC.
-- [ ] Basic admin login and tenant scoping (or clearly constrained demo workspace).
-- [ ] Resend/revoke/expire signing request and meaningful empty/error states.
-- [ ] Signer printable/downloadable copy and admin email confirmation.
+- [x] Audit timeline + SHA-256 file hash + completion timestamp in UTC.
+- [x] Basic admin login and tenant scoping (or clearly constrained demo workspace). *(Isolated per-browser demo workspaces.)*
+- [x] Resend/revoke/expire signing request and meaningful empty/error states.
+- [ ] Signer printable/downloadable copy and admin email confirmation. *(Partial: signer download implemented; no email confirmation.)*
 
 ### P2 — intentionally defer
 - [ ] AI detection of signature fields; multi-party signing order; payment plans; CRM integrations; complex automation builder; advanced analytics; bulk actions; brand customization; full compliance certifications; identity verification; native mobile apps.

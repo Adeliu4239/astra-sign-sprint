@@ -27,3 +27,27 @@
 
 ## Evidence checklist
 Capture verified deployed URL, git SHA, test results and remaining limitations in `docs/SUBMISSION.md`. Avoid claims of compliance or identity authentication not actually demonstrated.
+
+---
+
+## Results (2026-11-18, code SHA `0cdff55`)
+
+| Check | Command | Local | Production |
+|---|---|---|---|
+| Typecheck | `npm run typecheck` | pass | — |
+| Lint | `npm run lint` | pass | — |
+| Unit (coordinates incl. all rotations and CropBox; stamping incl. **page-2 regression**, unbalanced CTM, rotated page, text fields; state machine; decryption) | `npm test` | 33/33 | — |
+| Build | `npm run build` | pass | Vercel build pass (runs migrations first) |
+| E2E: gold path (fresh 3-page mixed-size + rotated PDF, signature on page 2, refresh persistence, separate browser signing, double-click, signed PDF content-stream check, replay 409, event log) | `npm run test:e2e` | pass | pass |
+| E2E: non-PDF upload rejected with message | ″ | pass | pass |
+| E2E: invalid / incomplete signer link messages | ″ | pass | pass |
+| E2E: 9 MB PDF via chunked upload, streamed signed download | ″ | pass | pass |
+| E2E: phone viewport (Pixel 7 emulation) typed signature | ″ | pass | pass |
+| E2E: revoke → link blocked (409) → restart with same fields → new link | ″ | pass | pass |
+| E2E: other workspace gets 404 for case and PDF; no session gets 401 | ″ | pass | pass |
+
+Production runs use `E2E_BASE_URL=https://astra-sign-sprint.vercel.app npm run test:e2e`. Traces, videos and screenshots are disabled so signer tokens never land in test artifacts.
+
+Robustness checks run outside the suite (scripts in the session, results rendered with `scripts/render-pdf-page.mjs`): Chrome-generated PDF (object streams, embedded fonts), AcroForm PDF, CropBox-offset PDF and owner-password-encrypted PDF all stamp correctly.
+
+**Not covered by automation:** real iOS Safari/WebKit (only Chromium mobile emulation), screen-reader pass, and real-world scanned PDFs (wasm image decoders are configured but not exercised with a JBIG2 sample).
