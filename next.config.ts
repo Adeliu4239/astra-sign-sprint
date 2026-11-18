@@ -10,7 +10,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  serverExternalPackages: ["pdf-lib"],
+  serverExternalPackages: ["pdf-lib", "@cantoo/pdf-lib"],
   turbopack: {
     rules: {
       "*.css": {

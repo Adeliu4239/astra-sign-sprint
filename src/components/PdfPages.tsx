@@ -10,7 +10,7 @@ function loadPdfjs(): Promise<PdfjsModule> {
   if (!pdfjsPromise) {
     pdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs").then((m) => {
       const mod = m as unknown as PdfjsModule;
-      mod.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+      mod.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs";
       return mod;
     });
   }
@@ -48,7 +48,15 @@ export function PdfPages({ url, renderOverlay, onLoad, overlayClassName, onPageP
       try {
         const pdfjs = await loadPdfjs();
         if (cancelled) return;
-        task = pdfjs.getDocument({ url });
+        task = pdfjs.getDocument({
+          url,
+          // Runtime assets for non-embedded fonts, CJK encodings and JPX/JBIG2 (scanned) images.
+          cMapUrl: "/pdfjs/cmaps/",
+          cMapPacked: true,
+          standardFontDataUrl: "/pdfjs/standard_fonts/",
+          wasmUrl: "/pdfjs/wasm/",
+          iccUrl: "/pdfjs/iccs/",
+        });
         const loaded = await task.promise;
         const infos: PageInfo[] = [];
         for (let i = 0; i < loaded.numPages; i++) {

@@ -4,6 +4,7 @@ import { sql } from "./db";
 import { decrypt, encrypt, hashIp, hashSecret, newSecret, sha256Hex } from "./crypto";
 import { HttpError } from "./errors";
 import { inspectPdf, stampPdf, type AuditLine } from "@/lib/pdf/stamp";
+import { decryptOwnerProtectedPdf } from "@/lib/pdf/decrypt";
 import {
   CONSENT_TEXT,
   MAX_PAGES,
@@ -200,14 +201,27 @@ export async function uploadDocument(
   meta: RequestMeta,
 ) {
   validatePdfUpload(bytes, rawFilename, mime);
+  const uploadedSha = sha256Hex(bytes);
   let info;
   try {
     info = await inspectPdf(bytes);
   } catch (e) {
     throw new HttpError(422, e instanceof Error ? e.message : "Could not read PDF");
   }
+  let decrypted = false;
   if (info.encrypted) {
-    throw new HttpError(422, "This PDF is password-protected or encrypted. Remove the protection (for example, print it to a new PDF) and upload again.");
+    const plain = await decryptOwnerProtectedPdf(bytes);
+    if (!plain) {
+      throw new HttpError(422, "This PDF needs a password to open. Remove the password (for example, print it to a new PDF) and upload again.");
+    }
+    bytes = plain;
+    decrypted = true;
+    try {
+      info = await inspectPdf(bytes);
+    } catch {
+      throw new HttpError(422, "This protected PDF could not be prepared for signing. Print it to a new PDF and upload again.");
+    }
+    if (info.encrypted) throw new HttpError(422, "This PDF is encrypted and cannot be signed. Print it to a new PDF and upload again.");
   }
   if (info.pageCount > MAX_PAGES) throw new HttpError(422, `This PDF has ${info.pageCount} pages; the limit is ${MAX_PAGES}.`);
   const filename = sanitizeFilename(rawFilename);
@@ -235,7 +249,13 @@ export async function uploadDocument(
       type: "document_uploaded",
       actor: "admin",
       meta,
-      data: { filename, pages: info.pageCount, bytes: bytes.byteLength, sha256: sha },
+      data: {
+        filename,
+        pages: info.pageCount,
+        bytes: bytes.byteLength,
+        sha256: sha,
+        ...(decrypted ? { uploaded_sha256: uploadedSha, note: "owner-password protection removed for signing" } : {}),
+      },
     });
     return { documentId: doc!.id, requestId: req!.id, pageCount: info.pageCount };
   });
