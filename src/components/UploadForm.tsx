@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiError, formatBytes } from "@/lib/format";
 import { MAX_UPLOAD_BYTES } from "@/lib/schemas";
@@ -37,6 +37,13 @@ export function UploadForm({ caseId, replacing = false }: { caseId: string; repl
       if (input.current) input.current.value = "";
     }
   };
+
+  // A file picked before hydration never fired onChange: pick it up once React is ready.
+  useEffect(() => {
+    const f = input.current?.files?.[0];
+    if (f) void upload(f);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (replacing) {
     return (

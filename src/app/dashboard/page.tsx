@@ -9,7 +9,8 @@ import { formatUtc } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-export default async function Dashboard() {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
   const ws = await currentWorkspace();
   if (!ws) redirect("/");
   const cases = await listCases(ws.id);
@@ -33,7 +34,7 @@ export default async function Dashboard() {
 
         <section className="card p-5">
           <h2 className="mb-3 font-semibold">New case</h2>
-          <NewCaseForm />
+          <NewCaseForm initialError={typeof error === "string" ? error.slice(0, 300) : null} />
         </section>
 
         <section className="card overflow-hidden">

@@ -4,13 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiError } from "@/lib/format";
 
-export function NewCaseForm({ compact = false }: { compact?: boolean }) {
+export function NewCaseForm({ compact = false, initialError = null }: { compact?: boolean; initialError?: string | null }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +32,7 @@ export function NewCaseForm({ compact = false }: { compact?: boolean }) {
   };
 
   return (
-    <form onSubmit={submit} className={`grid gap-3 ${compact ? "" : "sm:grid-cols-3"}`} data-testid="new-case-form">
+    <form onSubmit={submit} method="post" action="/api/cases" className={`grid gap-3 ${compact ? "" : "sm:grid-cols-3"}`} data-testid="new-case-form">
       <label className="text-sm">
         <span className="mb-1 block font-medium">Case / file name</span>
         <input className="input" required maxLength={120} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="MIND Test Case 001" name="title" />
