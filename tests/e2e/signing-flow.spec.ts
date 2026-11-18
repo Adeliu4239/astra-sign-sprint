@@ -1,5 +1,5 @@
 import { inflateSync } from "node:zlib";
-import { expect, test, type Page } from "@playwright/test";
+import { devices, expect, test, type Page } from "@playwright/test";
 import { PDFArray, PDFDocument, PDFName, PDFRawStream, type PDFRef } from "pdf-lib";
 import { makeAgreementPdf, makeLargePdf } from "./make-pdf";
 
@@ -215,4 +215,106 @@ test("large PDF (> 4.5 MB) uploads in chunks and the signed copy downloads", asy
   const bytes = Buffer.from(await signed.body());
   expect(bytes.byteLength).toBeGreaterThan(9 * 1024 * 1024);
   expect((await PDFDocument.load(bytes)).getPageCount()).toBe(4);
+});
+
+test("signer completes on a phone-sized touch device using a typed signature", async ({ page, browser }) => {
+  await page.goto("/");
+  await page.getByTestId("enter-demo").click();
+  await page.getByPlaceholder("MIND Test Case 001").fill("Mobile signer case");
+  await page.getByPlaceholder("Taylor Example").fill("Jordan Mobile");
+  await page.getByPlaceholder("taylor@example.com").fill("jordan@example.com");
+  await page.getByRole("button", { name: "Create case" }).click();
+  await expect(page.getByTestId("case-title")).toBeVisible();
+  await page.getByTestId("pdf-input").setInputFiles({ name: "agreement.pdf", mimeType: "application/pdf", buffer: await makeAgreementPdf() });
+  await expect(page.getByTestId("pdf-page-2")).toBeVisible();
+  await page.getByTestId("tool-signature").click();
+  await clickOnPage(page, 1, 0.5, 0.5);
+  await expect(page.getByTestId("save-state")).toHaveText("Saved");
+  await page.getByTestId("create-link").click();
+  const signerUrl = await page.getByTestId("signer-url").inputValue();
+
+  const { defaultBrowserType: _ignored, ...pixel } = devices["Pixel 7"];
+  void _ignored;
+  const phone = await browser.newContext({ ...pixel });
+  const m = await phone.newPage();
+  await m.goto(signerUrl);
+  await expect(m.getByTestId("pdf-page-3")).toBeAttached();
+  await m.getByRole("button", { name: /Go to signature form/ }).tap();
+  await m.getByTestId("sig-mode-type").tap();
+  await expect(m.getByTestId("typed-signature")).toHaveValue("Jordan Mobile");
+  await m.getByTestId("consent").tap();
+  await expect(m.getByTestId("submit-signature")).toBeEnabled();
+  await m.getByTestId("submit-signature").tap();
+  await expect(m.getByTestId("signing-complete")).toBeVisible();
+  await phone.close();
+
+  await page.reload();
+  await expect(page.getByTestId("status-badge")).toHaveText("Completed");
+});
+
+test("revoked link cannot be used; restarting issues a new link with the same fields", async ({ page, browser }) => {
+  await page.goto("/");
+  await page.getByTestId("enter-demo").click();
+  await page.getByPlaceholder("MIND Test Case 001").fill("Revoke case");
+  await page.getByPlaceholder("Taylor Example").fill("Casey Revoke");
+  await page.getByPlaceholder("taylor@example.com").fill("casey@example.com");
+  await page.getByRole("button", { name: "Create case" }).click();
+  await page.getByTestId("pdf-input").setInputFiles({ name: "agreement.pdf", mimeType: "application/pdf", buffer: await makeAgreementPdf() });
+  await expect(page.getByTestId("pdf-page-2")).toBeVisible();
+  await page.getByTestId("tool-signature").click();
+  await clickOnPage(page, 1, 0.4, 0.6);
+  await expect(page.getByTestId("save-state")).toHaveText("Saved");
+  await page.getByTestId("create-link").click();
+  const oldUrl = await page.getByTestId("signer-url").inputValue();
+
+  page.once("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Revoke link" }).click();
+  await expect(page.getByTestId("status-badge")).toHaveText("Revoked");
+
+  const ctx = await browser.newContext();
+  const s = await ctx.newPage();
+  await s.goto(oldUrl);
+  await expect(s.getByTestId("signer-notice")).toContainText("cancelled");
+  const token = oldUrl.split("#")[1]!;
+  const r = await ctx.request.post("/api/sign/submit", {
+    headers: { "x-signing-token": token },
+    data: { consent: true, signerName: "X", method: "typed", signaturePng: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGNgYGD4z8DAwMAAAAgAAQ3cs1YAAAAASUVORK5CYII=" },
+  });
+  expect(r.status()).toBe(409);
+  await ctx.close();
+
+  await page.getByRole("button", { name: "Start a new signing request" }).click();
+  await expect(page.getByTestId("status-badge")).toHaveText("Draft");
+  await expect(page.locator('[data-testid="placed-field"][data-page="2"]')).toHaveCount(1);
+  await page.getByTestId("create-link").click();
+  const newUrl = await page.getByTestId("signer-url").inputValue();
+  expect(newUrl).not.toBe(oldUrl);
+});
+
+test("another workspace cannot open this workspace's case or PDF", async ({ page, browser }) => {
+  await page.goto("/");
+  await page.getByTestId("enter-demo").click();
+  await page.getByPlaceholder("MIND Test Case 001").fill("Isolation case");
+  await page.getByPlaceholder("Taylor Example").fill("Iso Late");
+  await page.getByPlaceholder("taylor@example.com").fill("iso@example.com");
+  await page.getByRole("button", { name: "Create case" }).click();
+  await expect(page.getByTestId("case-title")).toBeVisible();
+  const caseUrl = page.url();
+  const docResponse = page.waitForResponse((r) => /\/api\/documents\/[0-9a-f-]{36}$/.test(r.url()));
+  await page.getByTestId("pdf-input").setInputFiles({ name: "agreement.pdf", mimeType: "application/pdf", buffer: await makeAgreementPdf() });
+  const docUrl = (await docResponse).url();
+
+  const other = await browser.newContext();
+  const o = await other.newPage();
+  await o.goto("/");
+  await o.getByTestId("enter-demo").click();
+  await expect(o).toHaveURL(/dashboard/);
+  expect((await other.request.get(docUrl)).status()).toBe(404);
+  await o.goto(caseUrl);
+  await expect(o.getByRole("heading", { name: "Not found" })).toBeVisible();
+  // Without any workspace cookie, admin APIs refuse.
+  const anon = await browser.newContext();
+  expect((await anon.request.get(docUrl)).status()).toBe(401);
+  await anon.close();
+  await other.close();
 });

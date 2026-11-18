@@ -49,3 +49,33 @@ Disallow transitions out of `completed`. Signing submission must be atomic/idemp
 
 ## Deployment contract
 Public HTTPS preview, repeatable DB migrations, production secrets only in hosting, env example with descriptions. Ensure production RLS/service-role access patterns are audited. No client-visible service-role credentials. Document smoke test for original upload → signed PDF download at live URL.
+
+---
+
+## As built (2026-11-18) — deviations from the plan above
+
+**Stack:** Next.js 16 App Router (TypeScript strict) on Vercel · Neon Postgres via Vercel Marketplace (`postgres` driver) · PDF.js 6 (legacy build) viewer · pdf-lib stamping (+ `@cantoo/pdf-lib` only to decrypt owner-protected PDFs) · Zod at every API boundary · Vitest + Playwright.
+
+**Data model (`db/migrations/`):**
+- `workspaces(id, name, session_hash)` replaces `organizations`/`users`: a self-service demo tenant tied to an httpOnly cookie (only its hash is stored).
+- `cases` → `workspace_id`; every admin query joins through `cases.workspace_id`, and documents and requests are reached only through it.
+- `documents(kind original|signed, sha256, content bytea, …)`: originals and executed PDFs are separate immutable rows, so there is no object store.
+- `signing_requests(status draft|pending|completed|revoked, token_hash unique, token_ciphertext, expires_at, signed_document_id, …)`; "expired" is derived from `expires_at` and enforced at submit.
+- `signature_fields(kind signature|name|date, page_index, x, y, width, height)`: normalised 0–1 in displayed page space.
+- `signing_events(event_type, actor admin|signer|system, occurred_at, ip_hash, user_agent, metadata)`: written server-side only.
+- `upload_sessions` / `upload_chunks`: staging for chunked uploads.
+
+**Routes:**
+| Route | Who | Purpose |
+|---|---|---|
+| `/` | public | Landing; "Open demo workspace" (form POST → `/api/workspace`) |
+| `/dashboard`, `/cases/[caseId]` | workspace cookie | Case list; case detail: upload → place fields → link → completed + audit log |
+| `/sign#<token>` | signer | Client-rendered signing page; the token stays in the fragment |
+| `POST /api/cases`, `POST /api/cases/[id]/document`, `POST /api/cases/[id]/uploads`, `PUT /api/uploads/[id]/chunks/[i]`, `POST /api/uploads/[id]/complete` | workspace | Create case; single or chunked upload |
+| `GET /api/documents/[id]` | workspace | Stream original or signed PDF (scoped to the workspace) |
+| `PUT /api/requests/[id]/fields`, `POST …/send`, `…/revoke`, `…/restart` | workspace | Field autosave; issue link (draft → pending); revoke; new request after revoke/expiry |
+| `POST /api/sign/view`, `GET /api/sign/document`, `POST /api/sign/submit` | `x-signing-token` header | Signer view data; original (pending) / signed (completed) PDF; atomic signing |
+
+**Signing transaction (`submitSignature`):** lock the request row → check `pending` and not expired → load fields → log consent → stamp the PDF in memory (fields + certificate page) → insert the signed document → `UPDATE … SET status='completed' WHERE status='pending'` → log `document_signed` and `request_completed` → commit. Any failure rolls back everything, so the signer can retry.
+
+**Coordinate pipeline:** browser `clientToNorm(pointer, overlay.getBoundingClientRect())` → normalised rect stored → server `pageGeometry(page)` (CropBox ∩ MediaBox, normalised /Rotate) → `normRectToPdf` → image fitted ("contain") and drawn at the displayed bottom-left anchor with `rotate = /Rotate`.
