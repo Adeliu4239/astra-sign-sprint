@@ -1,6 +1,6 @@
 # Security and resource limits
 
-Branch `feat/final-product-hardening`. **Not in production until that PR is approved, merged and deployed.**
+In production since 2026-11-19 (`a911a9f`, PR #3; migration `004_abuse_limits.sql`).
 Constants: `src/lib/limits.ts`. Tests: `tests/integration/limits.test.ts` (local Postgres only).
 
 ## Thresholds

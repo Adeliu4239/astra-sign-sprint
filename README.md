@@ -18,16 +18,18 @@ Built for the Astra AI Round 2 challenge.
 7. Back in the admin tab the case turns **Completed** (auto-refreshes). Download the signed PDF. It has the signature at the placed position plus a signing certificate page.
 
 ## What is implemented (verified on production)
-- Self-service demo workspace per browser, case creation, case list with status
+- Self-service demo workspace per browser, case creation; case list with search (title, client, email, file; accent-insensitive), status filters and a next step per case (Draft / Ready / Pending / Completed / Expired / Revoked)
 - PDF upload with validation (magic bytes, full parse, ≤ 300 pages, ≤ 25 MB); owner-protected PDFs decrypted, password-to-open PDFs rejected with instructions
 - Field placement (signature required, name/date optional) on any page, rotation/CropBox-aware
 - Expiring single-use signer link (token hashed at rest, kept in the URL fragment so it never reaches server logs); copy, `mailto:`, revoke, restart
 - Signer: review all pages, draw or type, explicit consent, double-submit safe, mobile-friendly
-- Server-side stamping, immutable signed artifact + SHA-256, signing certificate page, UTC event log
+- Server-side stamping, immutable signed artifact + SHA-256 (an integrity fingerprint, not a cryptographic PDF signature), signing certificate page, UTC event log
+- Signer names in Chinese, Japanese kana, accented/extended Latin (incl. Vietnamese), Greek and Cyrillic print as typed in the signed PDF (OFL Noto fonts, `assets/fonts/README.md`)
+- Reliability: replace-PDF asks before discarding placed fields; field saves are serialised and failures are visible with retry; in-app navigation waits for pending saves; a dropped connection while signing is resolved by asking the server
+- Abuse and resource limits in Postgres (rate limits, 150 MB storage quota per workspace, upload-session caps) and security headers (CSP, HSTS, COOP): `docs/SECURITY_LIMITS.md`
 - Not implemented: server-sent email, accounts/teams, multi-signer. See `docs/DECISIONS.md`
-- **Pending review** on `feat/final-product-hardening` (not in production until merged and deployed): rate limits, storage quota and upload caps, CSP/HSTS (`docs/SECURITY_LIMITS.md`); case search, filters and Draft/Ready stages; replace-PDF confirmation; save and network-failure recovery; Unicode names in signed PDFs (`assets/fonts/README.md`)
 
-**Reusable agreement templates** (on `feat/reusable-agreement-templates`; *not yet released to production*): save a PDF plus its field layout once under **Templates**, then pick it in the new-case form. Each case gets its own copy of the PDF and fields in one transaction, so later template edits or deletion never change existing cases. Direct upload stays the default. Design: `docs/PRODUCT_GAP_ANALYSIS.md`.
+**Reusable agreement templates**: save a PDF plus its field layout once under **Templates**, then pick it in the new-case form. Each case gets its own copy of the PDF and fields in one transaction, so later template edits or deletion never change existing cases. Direct upload stays the default. Design: `docs/PRODUCT_GAP_ANALYSIS.md`.
 
 ## Stack
 Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 · PostgreSQL (`postgres` driver; PDFs stored privately as `bytea`) · PDF.js (viewer) · pdf-lib (stamping) · Zod (validation) · Vitest + Playwright · Vercel + Neon.
