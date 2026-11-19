@@ -40,3 +40,45 @@ export const statusLabel: Record<EffectiveStatus | "no_document", string> = {
   revoked: "Revoked",
   expired: "Expired",
 };
+
+/**
+ * What the admin sees: the request status refined by how far preparation got.
+ * Draft = needs a PDF or a signature field; Ready = can create the signing link.
+ */
+export type CaseStage = "draft" | "ready" | "pending" | "completed" | "expired" | "revoked";
+
+export function caseStage(status: EffectiveStatus | "no_document", signatureFields: number): CaseStage {
+  if (status === "no_document") return "draft";
+  if (status === "draft") return signatureFields > 0 ? "ready" : "draft";
+  return status;
+}
+
+export const stageLabel: Record<CaseStage, string> = {
+  draft: "Draft",
+  ready: "Ready",
+  pending: "Pending",
+  completed: "Completed",
+  expired: "Expired",
+  revoked: "Revoked",
+};
+
+export const CASE_STAGES = Object.keys(stageLabel) as CaseStage[];
+
+/** One actionable next step per case, for the case list. */
+export function nextStep(status: EffectiveStatus | "no_document", signatureFields: number): string {
+  const stage = caseStage(status, signatureFields);
+  switch (stage) {
+    case "draft":
+      return status === "no_document" ? "Upload the agreement PDF" : "Place a signature field";
+    case "ready":
+      return "Create the signing link";
+    case "pending":
+      return "Waiting for the client — copy or resend the link";
+    case "completed":
+      return "Download the signed PDF";
+    case "expired":
+      return "Link expired — start a new request";
+    case "revoked":
+      return "Link revoked — start a new request";
+  }
+}

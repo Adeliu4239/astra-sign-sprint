@@ -677,3 +677,20 @@ export async function logRejectedAttempt(token: string, reason: string, meta: Re
     select id, case_id from signing_requests where token_hash = ${hashSecret(token)}`;
   if (r) await logEvent(sql(), { caseId: r.case_id, requestId: r.id, type: "signing_attempt_rejected", actor: "signer", meta, data: { reason } });
 }
+
+/* ------------------------------------------------------ case list stage */
+
+/** Signature-field count on each case's latest request (for Draft vs Ready), workspace-scoped. */
+export async function signatureFieldCounts(workspaceId: string): Promise<Map<string, number>> {
+  const rows = await sql()<{ case_id: string; n: number }[]>`
+    select r.case_id, count(f.id)::int as n
+    from (
+      select distinct on (sr.case_id) sr.id, sr.case_id
+      from signing_requests sr join cases c on c.id = sr.case_id
+      where c.workspace_id = ${workspaceId}
+      order by sr.case_id, sr.created_at desc
+    ) r
+    join signature_fields f on f.signing_request_id = r.id and f.kind = 'signature'
+    group by r.case_id`;
+  return new Map(rows.map((r) => [r.case_id, r.n]));
+}

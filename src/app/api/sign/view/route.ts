@@ -7,7 +7,9 @@ import { metaFrom, signingTokenFrom } from "@/lib/server/http";
 export const POST = handle(async (req: Request) => {
   const view = await getSignerView(signingTokenFrom(req));
   if (!view) return NextResponse.json({ status: "invalid" }, { headers: { "Cache-Control": "no-store" } });
-  if (view.status === "pending") await logSignerOpened(view, metaFrom(req)).catch(() => {});
+  // A status re-check after a dropped submit is not a new "opened" event.
+  const recheck = req.headers.get("x-fs-recheck") === "1";
+  if (view.status === "pending" && !recheck) await logSignerOpened(view, metaFrom(req)).catch(() => {});
   return NextResponse.json(
     {
       status: view.status,
