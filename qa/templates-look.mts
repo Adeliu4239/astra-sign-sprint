@@ -1,0 +1,23 @@
+/* Screenshots of the template UI on a local build. Usage: BASE=http://localhost:3100 npx tsx qa/templates-look.mts */
+import { chromium } from "@playwright/test";
+import { makeAgreementPdf } from "../tests/e2e/make-pdf";
+const BASE = process.env.BASE ?? "http://localhost:3100";
+const b = await chromium.launch(); const c = await b.newContext({ viewport: { width: 1366, height: 900 } }); const p = await c.newPage();
+await p.goto(BASE); await p.getByTestId("enter-demo").click(); await p.waitForURL(/dashboard/);
+await p.screenshot({ path: "qa/artifacts/tpl-0-dashboard-before.png" });
+await p.goto(`${BASE}/templates`); await p.getByPlaceholder("Standard client agreement").fill("MIND standard client agreement");
+await p.getByRole("button", { name: "Create template" }).click(); await p.waitForURL(/templates\/.+/);
+await p.getByTestId("pdf-input").setInputFiles({ name: "mind-standard.pdf", mimeType: "application/pdf", buffer: await makeAgreementPdf("look") });
+await p.getByTestId("pdf-page-2").locator("canvas").first().waitFor();
+const o = p.locator('[data-page-overlay="1"]'); await o.scrollIntoViewIfNeeded(); const bb = (await o.boundingBox())!;
+await o.click({ position: { x: bb.width * 0.54, y: bb.height * 0.48 } });
+await p.getByTestId("use-template").waitFor();
+await p.screenshot({ path: "qa/artifacts/tpl-1-editor.png" });
+await p.goto(`${BASE}/templates`); await p.screenshot({ path: "qa/artifacts/tpl-2-list.png" });
+await p.getByRole("link", { name: "New case →" }).click(); await p.waitForURL(/dashboard/);
+await p.screenshot({ path: "qa/artifacts/tpl-3-dashboard-select.png" });
+await p.getByPlaceholder("MIND Test Case 001").fill("Client file 042"); await p.getByPlaceholder("Taylor Example").fill("Jordan Sample"); await p.getByPlaceholder("taylor@example.com").fill("jordan@example.test");
+await p.getByRole("button", { name: "Create case" }).click(); await p.getByTestId("from-template").waitFor(); await p.getByTestId("pdf-page-2").locator("canvas").first().waitFor();
+await p.screenshot({ path: "qa/artifacts/tpl-4-case-from-template.png" });
+const m = await c.newPage(); await m.setViewportSize({ width: 390, height: 844 }); await m.goto(`${BASE}/dashboard`); await m.screenshot({ path: "qa/artifacts/tpl-5-mobile-dashboard.png", fullPage: true });
+await b.close();
