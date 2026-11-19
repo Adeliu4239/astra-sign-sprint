@@ -4,8 +4,8 @@
  * and covered by tests/integration/limits.test.ts.
  */
 export const LIMITS = {
-  /** New demo workspaces per client IP per hour (a full 3-browser E2E run creates ~35). */
-  workspaceCreatesPerIpPerHour: 60,
+  /** New demo workspaces per client IP per hour (a full 3-browser E2E run creates ~48, so a re-run fits). */
+  workspaceCreatesPerIpPerHour: 150,
   /** Upload starts (single-request upload or chunked-upload init) per workspace per hour. */
   uploadStartsPerWorkspacePerHour: 60,
   /** Upload starts per client IP per hour, across all workspaces. */

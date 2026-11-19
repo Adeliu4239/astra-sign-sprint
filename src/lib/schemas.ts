@@ -16,8 +16,17 @@ export const createCaseSchema = z.object({
   title: z.string({ error: "Case title is required" }).trim().min(1, "Case title is required").max(120, "Case title is too long"),
   clientName: z.string({ error: "Client name is required" }).trim().min(1, "Client name is required").max(120, "Client name is too long"),
   clientEmail: z.string({ error: "Client email is required" }).trim().toLowerCase().email("Enter a valid client email").max(200),
+  /** Optional saved template to copy the PDF and fields from. Empty string = none. */
+  templateId: z.preprocess(
+    (v) => (v === "" || v === null ? undefined : v),
+    z.string().uuid("Choose a valid template").optional(),
+  ),
 });
 export type CreateCaseInput = z.infer<typeof createCaseSchema>;
+
+export const createTemplateSchema = z.object({
+  name: z.string({ error: "Template name is required" }).trim().min(1, "Template name is required").max(120, "Template name is too long"),
+});
 
 const unit = z.number().finite().min(0).max(1);
 const EPS = 1e-6;

@@ -40,9 +40,11 @@ interface Props {
   requestId: string;
   documentUrl: string;
   initialFields: EditorField[];
+  /** "template": edit a reusable layout; there is no signing-link step. */
+  mode?: "case" | "template";
 }
 
-export function FieldEditor({ requestId, documentUrl, initialFields }: Props) {
+export function FieldEditor({ requestId, documentUrl, initialFields, mode = "case" }: Props) {
   const router = useRouter();
   const [fields, setFields] = useState<EditorField[]>(initialFields);
   const [tool, setTool] = useState<FieldKind | null>(initialFields.length === 0 ? "signature" : null);
@@ -83,7 +85,7 @@ export function FieldEditor({ requestId, documentUrl, initialFields }: Props) {
         const hasSignature = fieldsRef.current.some((f) => f.kind === "signature");
         if (hasSignature !== hadSignature.current) {
           hadSignature.current = hasSignature;
-          router.refresh(); // Draft <-> Ready badge
+          router.refresh(); // Draft <-> Ready badge; template "New case" readiness
         }
         return true;
       } catch (e) {
@@ -369,6 +371,15 @@ export function FieldEditor({ requestId, documentUrl, initialFields }: Props) {
             </div>
           )}
 
+          {mode === "template" ? (
+            <div className="border-t border-slate-200 pt-4" data-testid="template-note">
+              <h3 className="text-sm font-semibold">2. Use this template</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Changes save automatically. Each new case gets its own copy of this PDF and these fields, so later edits here never change existing cases.
+              </p>
+              {!hasSignature && <p className="mt-2 text-xs text-amber-700">Place a signature field before using this template.</p>}
+            </div>
+          ) : (
           <div className="border-t border-slate-200 pt-4">
             <h3 className="text-sm font-semibold">2. Create signing link</h3>
             <p className="mt-1 text-xs text-slate-500">Fields are locked once the link is created. You will get a link to copy and share.</p>
@@ -378,6 +389,7 @@ export function FieldEditor({ requestId, documentUrl, initialFields }: Props) {
             {!hasSignature && !sendError && <p className="mt-2 text-xs text-amber-700">A signature field is required.</p>}
             {sendError && <p role="alert" className="mt-2 text-xs text-red-600">{sendError}</p>}
           </div>
+          )}
         </div>
       </aside>
     </div>

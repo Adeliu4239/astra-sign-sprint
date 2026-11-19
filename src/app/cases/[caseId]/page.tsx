@@ -21,6 +21,7 @@ export const dynamic = "force-dynamic";
 const EVENT_LABEL: Record<string, string> = {
   case_created: "Case created",
   document_uploaded: "Document uploaded",
+  document_from_template: "Document and fields copied from saved template",
   request_created: "Signing link created",
   request_revoked: "Signing link revoked",
   request_restarted: "New signing request started",
@@ -53,6 +54,7 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
   const origin = originFromHeaders(await headers());
   const token = request ? revealToken(request) : null;
   const docUrl = document ? `/api/documents/${document.id}` : null;
+  const fromTemplate = events.find((e) => e.event_type === "document_from_template")?.metadata as { template_name?: string } | undefined;
 
   return (
     <>
@@ -69,6 +71,11 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
               <p className="text-sm text-slate-600">
                 {c.client_name} · {c.client_email}
               </p>
+              {fromTemplate?.template_name && (
+                <p className="mt-1 text-xs text-slate-500" data-testid="from-template">
+                  Prepared from template “{fromTemplate.template_name}” (this case has its own copy)
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <StatusBadge stage={caseStage(status, fields.filter((f) => f.kind === "signature").length)} />

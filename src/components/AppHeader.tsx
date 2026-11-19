@@ -16,6 +16,9 @@ export function AppHeader({ workspaceName }: { workspaceName?: string }) {
             <Link href="/dashboard" className="font-medium text-indigo-700 hover:underline">
               Cases
             </Link>
+            <Link href="/templates" className="font-medium text-indigo-700 hover:underline">
+              Templates
+            </Link>
           </div>
         )}
       </div>

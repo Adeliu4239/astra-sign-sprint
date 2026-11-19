@@ -7,7 +7,7 @@ Constants: `src/lib/limits.ts`. Tests: `tests/integration/limits.test.ts` (local
 
 | Control | Limit | Scope | Enforcement | On breach |
 |---|---|---|---|---|
-| New demo workspaces | 60 per hour | client IP (keyed hash, never stored raw) | Postgres fixed-window counter: `INSERT … ON CONFLICT DO UPDATE … RETURNING` (atomic across serverless instances) | Home page shows "Too many demo workspaces…" (fixed text, nothing reflected from the URL); API 429 + `Retry-After` |
+| New demo workspaces | 150 per hour | client IP (keyed hash, never stored raw) | Postgres fixed-window counter: `INSERT … ON CONFLICT DO UPDATE … RETURNING` (atomic across serverless instances) | Home page shows "Too many demo workspaces…" (fixed text, nothing reflected from the URL); API 429 + `Retry-After` |
 | Upload starts (single upload or chunked init) | 60 per hour | workspace | same counter | 429 + `Retry-After`; message shown in the upload box |
 | Upload starts | 150 per hour | client IP | same counter | same |
 | Stored PDF bytes | 150 MB | workspace (originals + signed copies) | Checked inside the upload transaction under a `SELECT … FOR UPDATE` lock on the workspace row, so concurrent uploads cannot both slip under the limit. Also checked at chunked-upload start, before any bytes are sent | 413 "storage limit … open a new demo workspace" |
@@ -16,7 +16,7 @@ Constants: `src/lib/limits.ts`. Tests: `tests/integration/limits.test.ts` (local
 | File size / pages / fields / signature image | 25 MB / 300 / 60 / 600 KB | per request | unchanged (Zod + server checks) | 413/422 with a message |
 
 **Why these numbers:**
-- A full three-browser E2E run creates about 35 workspaces from one IP.
+- A full three-browser E2E run creates about 48 workspaces from one IP, so 150 per hour still allows a re-run during release verification. Workspaces are small rows; stored bytes are bounded separately by the per-workspace quota and the per-IP upload limit.
 - An evaluator creates one workspace and a handful of uploads.
 - A small firm working all day stays well below 60 uploads per hour.
 - The Neon Free plan has a small total storage allowance. 150 MB per workspace stops one browser from filling it, while still allowing six maximum-size (25 MB) PDFs, or hundreds of typical agreements.
@@ -39,7 +39,7 @@ Constants: `src/lib/limits.ts`. Tests: `tests/integration/limits.test.ts` (local
 ## Authorization review (all PDF and case routes)
 - **Admin routes** (`/api/cases/**`, `/api/uploads/**`, `/api/requests/**`, `/api/documents/[id]`) call `requireWorkspace()`. Every query joins `cases.workspace_id`, so a foreign ID returns 404 and a missing session returns 401. E2E covers this in "another workspace cannot open…".
 - **Signer routes** (`/api/sign/*`) take the token only from the `x-signing-token` header. Only its hash is looked up. An invalid token returns a generic `invalid` or 404, with no detail about why.
-- **Templates (PR #2):** the template routes use the same `requireWorkspace()` and join on `workspace_id`. This branch does not include them.
+- **Templates:** the template routes use the same `requireWorkspace()` and join on `workspace_id`; template uploads go through the same rate-limited, quota-checked upload routes, and creating a case from a template (which copies the PDF) is checked against the storage quota in the same transaction.
 
 ## Error privacy
 - Unhandled errors return a generic 500. Only `err.message` is logged, and never the URL or the token.

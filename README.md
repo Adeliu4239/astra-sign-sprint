@@ -27,6 +27,8 @@ Built for the Astra AI Round 2 challenge.
 - Not implemented: server-sent email, accounts/teams, multi-signer. See `docs/DECISIONS.md`
 - **Pending review** on `feat/final-product-hardening` (not in production until merged and deployed): rate limits, storage quota and upload caps, CSP/HSTS (`docs/SECURITY_LIMITS.md`); case search, filters and Draft/Ready stages; replace-PDF confirmation; save and network-failure recovery; Unicode names in signed PDFs (`assets/fonts/README.md`)
 
+**Reusable agreement templates** (on `feat/reusable-agreement-templates`; *not yet released to production*): save a PDF plus its field layout once under **Templates**, then pick it in the new-case form. Each case gets its own copy of the PDF and fields in one transaction, so later template edits or deletion never change existing cases. Direct upload stays the default. Design: `docs/PRODUCT_GAP_ANALYSIS.md`.
+
 ## Stack
 Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 · PostgreSQL (`postgres` driver; PDFs stored privately as `bytea`) · PDF.js (viewer) · pdf-lib (stamping) · Zod (validation) · Vitest + Playwright · Vercel + Neon.
 

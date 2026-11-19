@@ -9,7 +9,7 @@ import { sql } from "@/lib/server/db";
 import { hashSecret } from "@/lib/server/crypto";
 import { HttpError } from "@/lib/server/errors";
 import { consumeRateLimit, enforceUploadStartLimit, enforceWorkspaceCreateLimit } from "@/lib/server/limits";
-import { completeChunkedUpload, createCase, putUploadChunk, startChunkedUpload, uploadDocument } from "@/lib/server/service";
+import { completeChunkedUpload, createCase, createTemplate, putUploadChunk, saveFields, startChunkedUpload, uploadDocument } from "@/lib/server/service";
 import { LIMITS } from "@/lib/limits";
 import { UPLOAD_CHUNK_BYTES } from "@/lib/schemas";
 import { makeAgreementPdf } from "../e2e/make-pdf";
@@ -110,6 +110,22 @@ describe("per-workspace storage quota", () => {
     const docs = await sql()<{ id: string }[]>`select id from documents where case_id = ${c.id}`;
     expect(docs.map((d) => d.id)).toEqual([second.documentId]);
     expect(first.documentId).not.toBe(second.documentId);
+  });
+
+  it("creating a case from a template copies the PDF, so it is refused when the copy would exceed the quota", async () => {
+    const ws = await newWorkspace();
+    const t = await createTemplate(ws, "Quota template", meta);
+    const up = await uploadDocument(ws, t.id, new Uint8Array(pdf), "standard.pdf", "application/pdf", meta);
+    await saveFields(ws, up.requestId, [{ kind: "signature", pageIndex: 0, x: 0.1, y: 0.8, width: 0.3, height: 0.08 }]);
+    const fromTemplate = (title: string) =>
+      createCase(ws, { title, clientName: "Sam Example", clientEmail: "sam@example.test", templateId: t.id }, meta);
+    await fromTemplate("Fits"); // fits
+    const filler = await newCase(ws, "Filler");
+    await fillStorage(filler.id, LIMITS.workspaceStorageBytes - 2 * pdf.byteLength - 1);
+    const before = (await sql()<{ n: number }[]>`select count(*)::int n from cases where workspace_id = ${ws}`)[0]!.n;
+    await expectHttp(fromTemplate("Too big"), 413, "storage_quota");
+    const after = (await sql()<{ n: number }[]>`select count(*)::int n from cases where workspace_id = ${ws}`)[0]!.n;
+    expect(after).toBe(before); // whole transaction rolled back: no half-created case
   });
 });
 

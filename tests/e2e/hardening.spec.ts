@@ -111,6 +111,8 @@ test("case list: stages, next steps, accent-insensitive search, status filters, 
   await expect(page.getByTestId("case-row")).toContainText("Ana Núñez");
 
   await page.getByTestId("clear-filters").click();
+  await expect(page).toHaveURL(/\/dashboard$/); // chips on the old page still carry q=nunez
+  await expect(page.getByTestId("clear-filters")).toHaveCount(0);
   await page.getByTestId("filter-ready").click();
   await expect(page).toHaveURL(/status=ready/);
   await expect(page.getByTestId("case-row")).toHaveCount(1);
