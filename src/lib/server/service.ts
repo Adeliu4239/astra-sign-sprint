@@ -65,7 +65,7 @@ export async function listCases(workspaceId: string) {
       select * from signing_requests sr where sr.case_id = c.id order by sr.created_at desc limit 1
     ) r on true
     left join documents d on d.id = r.document_id
-    where c.workspace_id = ${workspaceId}
+    where c.workspace_id = ${workspaceId} and c.kind = 'client'
     order by c.created_at desc`;
   return rows.map((r) => ({ ...r, status: caseStatus(r.request_status, r.expires_at) }));
 }
@@ -74,23 +74,67 @@ export function caseStatus(s: RequestStatus | null, expiresAt: Date | null): Eff
   return s ? effectiveStatus(s, expiresAt) : "no_document";
 }
 
+/**
+ * Creates a client case. With a template, the template's PDF and field layout are COPIED into new
+ * rows in the same transaction (a snapshot), so later template edits or deletion never affect this case.
+ */
 export async function createCase(workspaceId: string, input: CreateCaseInput, meta: RequestMeta) {
   return sql().begin(async (tx) => {
+    let snapshot: Awaited<ReturnType<typeof loadTemplateSnapshot>> | null = null;
+    if (input.templateId) snapshot = await loadTemplateSnapshot(tx, workspaceId, input.templateId);
     const [c] = await tx<{ id: string }[]>`
-      insert into cases (workspace_id, title, client_name, client_email)
-      values (${workspaceId}, ${input.title}, ${input.clientName}, ${input.clientEmail})
+      insert into cases (workspace_id, title, client_name, client_email, template_id)
+      values (${workspaceId}, ${input.title}, ${input.clientName}, ${input.clientEmail}, ${snapshot?.templateId ?? null})
       returning id`;
-    await logEvent(tx, { caseId: c!.id, type: "case_created", actor: "admin", meta, data: { title: input.title } });
+    await logEvent(tx, {
+      caseId: c!.id,
+      type: "case_created",
+      actor: "admin",
+      meta,
+      data: { title: input.title, ...(snapshot ? { template_id: snapshot.templateId, template_name: snapshot.templateName } : {}) },
+    });
+    if (snapshot) {
+      const [doc] = await tx<{ id: string }[]>`
+        insert into documents (case_id, kind, filename, mime, size_bytes, page_count, sha256, content)
+        select ${c!.id}, 'original', filename, mime, size_bytes, page_count, sha256, content
+        from documents where id = ${snapshot.documentId}
+        returning id`;
+      const [req] = await tx<{ id: string }[]>`
+        insert into signing_requests (case_id, document_id) values (${c!.id}, ${doc!.id}) returning id`;
+      await tx`
+        insert into signature_fields (signing_request_id, kind, page_index, x, y, width, height)
+        select ${req!.id}, kind, page_index, x, y, width, height from signature_fields where signing_request_id = ${snapshot.requestId}`;
+      await logEvent(tx, {
+        caseId: c!.id,
+        requestId: req!.id,
+        type: "document_from_template",
+        actor: "admin",
+        meta,
+        data: {
+          template_id: snapshot.templateId,
+          template_name: snapshot.templateName,
+          filename: snapshot.filename,
+          pages: snapshot.pageCount,
+          sha256: snapshot.sha256,
+          fields: snapshot.fieldCount,
+        },
+      });
+    }
     return c!;
   });
 }
 
-async function loadCase(tx: Tx, workspaceId: string, caseId: string) {
-  if (!/^[0-9a-f-]{36}$/i.test(caseId)) throw new HttpError(404, "Case not found");
-  const [c] = await tx<{ id: string; title: string; client_name: string; client_email: string; created_at: Date }[]>`
-    select id, title, client_name, client_email, created_at from cases
+type CaseKind = "client" | "template";
+
+async function loadCase(tx: Tx, workspaceId: string, caseId: string, kind: CaseKind | "any" = "client") {
+  const label = kind === "template" ? "Template" : "Case";
+  if (!/^[0-9a-f-]{36}$/i.test(caseId)) throw new HttpError(404, `${label} not found`);
+  const [c] = await tx<
+    { id: string; kind: CaseKind; title: string; client_name: string; client_email: string; created_at: Date; template_id: string | null }[]
+  >`
+    select id, kind, title, client_name, client_email, created_at, template_id from cases
     where id = ${caseId} and workspace_id = ${workspaceId}`;
-  if (!c) throw new HttpError(404, "Case not found");
+  if (!c || (kind !== "any" && c.kind !== kind)) throw new HttpError(404, `${label} not found`);
   return c;
 }
 
@@ -136,9 +180,9 @@ export interface EventRow {
   metadata: Record<string, unknown>;
 }
 
-export async function getCaseDetail(workspaceId: string, caseId: string) {
+export async function getCaseDetail(workspaceId: string, caseId: string, kind: CaseKind = "client") {
   const db = sql();
-  const c = await loadCase(db, workspaceId, caseId);
+  const c = await loadCase(db, workspaceId, caseId, kind);
   const [request] = await db<RequestRow[]>`
     select id, case_id, document_id, status, token_ciphertext, expires_at, created_at, sent_at,
            completed_at, revoked_at, signer_name, signed_document_id
@@ -229,7 +273,7 @@ export async function uploadDocument(
   const sha = sha256Hex(bytes);
 
   return sql().begin(async (tx) => {
-    await loadCase(tx, workspaceId, caseId);
+    await loadCase(tx, workspaceId, caseId, "any");
     const [latest] = await tx<{ id: string; status: RequestStatus }[]>`
       select id, status from signing_requests where case_id = ${caseId} order by created_at desc limit 1 for update`;
     if (latest && (latest.status === "pending" || latest.status === "completed")) {
@@ -268,7 +312,7 @@ export async function startChunkedUpload(workspaceId: string, caseId: string, fi
   if (size > MAX_UPLOAD_BYTES) throw new HttpError(413, `The limit is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`);
   if (!/\.pdf$/i.test(filename) && mime !== "application/pdf") throw new HttpError(415, "Only PDF files are supported.");
   const db = sql();
-  await loadCase(db, workspaceId, caseId);
+  await loadCase(db, workspaceId, caseId, "any");
   // Opportunistic cleanup of abandoned sessions.
   await db`delete from upload_sessions where created_at < now() - interval '1 day'`;
   const chunkCount = Math.ceil(size / UPLOAD_CHUNK_BYTES);
@@ -328,12 +372,12 @@ export async function getDocumentForWorkspace(workspaceId: string, documentId: s
 async function loadRequestForAdmin(tx: Tx, workspaceId: string, requestId: string, lock = false) {
   if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw new HttpError(404, "Signing request not found");
   const rows = lock
-    ? await tx<(RequestRow & { page_count: number; client_email: string; client_name: string })[]>`
-        select r.*, d.page_count, c.client_email, c.client_name from signing_requests r
+    ? await tx<(RequestRow & { page_count: number; client_email: string; client_name: string; case_kind: CaseKind })[]>`
+        select r.*, d.page_count, c.client_email, c.client_name, c.kind as case_kind from signing_requests r
         join cases c on c.id = r.case_id join documents d on d.id = r.document_id
         where r.id = ${requestId} and c.workspace_id = ${workspaceId} for update of r`
-    : await tx<(RequestRow & { page_count: number; client_email: string; client_name: string })[]>`
-        select r.*, d.page_count, c.client_email, c.client_name from signing_requests r
+    : await tx<(RequestRow & { page_count: number; client_email: string; client_name: string; case_kind: CaseKind })[]>`
+        select r.*, d.page_count, c.client_email, c.client_name, c.kind as case_kind from signing_requests r
         join cases c on c.id = r.case_id join documents d on d.id = r.document_id
         where r.id = ${requestId} and c.workspace_id = ${workspaceId}`;
   const r = rows[0];
@@ -358,6 +402,82 @@ export async function saveFields(workspaceId: string, requestId: string, fields:
   });
 }
 
+/* -------------------------------------------------------------- templates */
+
+export interface TemplateListItem {
+  id: string;
+  name: string;
+  created_at: Date;
+  filename: string | null;
+  page_count: number | null;
+  signature_fields: number;
+  total_fields: number;
+}
+
+export async function listTemplates(workspaceId: string) {
+  return sql()<TemplateListItem[]>`
+    select t.id, t.title as name, t.created_at, d.filename, d.page_count,
+           coalesce(f.sig, 0)::int as signature_fields, coalesce(f.total, 0)::int as total_fields
+    from cases t
+    left join lateral (
+      select * from signing_requests sr where sr.case_id = t.id order by sr.created_at desc limit 1
+    ) r on true
+    left join documents d on d.id = r.document_id
+    left join lateral (
+      select count(*) filter (where kind = 'signature') as sig, count(*) as total
+      from signature_fields where signing_request_id = r.id
+    ) f on true
+    where t.workspace_id = ${workspaceId} and t.kind = 'template'
+    order by t.created_at desc`;
+}
+
+export async function createTemplate(workspaceId: string, name: string, meta: RequestMeta) {
+  return sql().begin(async (tx) => {
+    const [t] = await tx<{ id: string }[]>`
+      insert into cases (workspace_id, kind, title, client_name, client_email)
+      values (${workspaceId}, 'template', ${name}, '', '') returning id`;
+    await logEvent(tx, { caseId: t!.id, type: "template_created", actor: "admin", meta, data: { name } });
+    return t!;
+  });
+}
+
+/** Deletes a template. Cases created from it keep their own copies; their template_id becomes null. */
+export async function deleteTemplate(workspaceId: string, templateId: string) {
+  return sql().begin(async (tx) => {
+    await loadCase(tx, workspaceId, templateId, "template");
+    await tx`delete from cases where id = ${templateId} and workspace_id = ${workspaceId} and kind = 'template'`;
+  });
+}
+
+export async function countCasesFromTemplate(workspaceId: string, templateId: string) {
+  const [r] = await sql()<{ n: number }[]>`
+    select count(*)::int as n from cases where workspace_id = ${workspaceId} and kind = 'client' and template_id = ${templateId}`;
+  return r?.n ?? 0;
+}
+
+async function loadTemplateSnapshot(tx: Tx, workspaceId: string, templateId: string) {
+  const t = await loadCase(tx, workspaceId, templateId, "template");
+  const [r] = await tx<{ id: string; document_id: string; filename: string; page_count: number; sha256: string }[]>`
+    select r.id, r.document_id, d.filename, d.page_count, d.sha256 from signing_requests r
+    join documents d on d.id = r.document_id
+    where r.case_id = ${templateId} order by r.created_at desc limit 1 for update of r`;
+  if (!r) throw new HttpError(409, `The template "${t.title}" has no PDF yet. Upload one before using it.`);
+  const fields = await tx<{ kind: string }[]>`select kind from signature_fields where signing_request_id = ${r.id}`;
+  if (!fields.some((f) => f.kind === "signature")) {
+    throw new HttpError(409, `The template "${t.title}" has no signature field yet. Place one before using it.`);
+  }
+  return {
+    templateId: t.id,
+    templateName: t.title,
+    requestId: r.id,
+    documentId: r.document_id,
+    filename: r.filename,
+    pageCount: r.page_count,
+    sha256: r.sha256,
+    fieldCount: fields.length,
+  };
+}
+
 /* ------------------------------------------------------- request lifecycle */
 
 export function signerUrl(origin: string, token: string) {
@@ -367,6 +487,7 @@ export function signerUrl(origin: string, token: string) {
 export async function sendRequest(workspaceId: string, requestId: string, meta: RequestMeta) {
   return sql().begin(async (tx) => {
     const r = await loadRequestForAdmin(tx, workspaceId, requestId, true);
+    if (r.case_kind === "template") throw new HttpError(409, "Templates cannot be sent for signature. Create a case from this template first.");
     if (r.status !== "draft") throw new HttpError(409, "A signing link was already created for this request.");
     const fields = await tx<{ kind: string; page_index: number }[]>`
       select kind, page_index from signature_fields where signing_request_id = ${requestId}`;
@@ -409,6 +530,7 @@ export function revealToken(r: Pick<RequestRow, "status" | "token_ciphertext">):
 export async function revokeRequest(workspaceId: string, requestId: string, meta: RequestMeta) {
   return sql().begin(async (tx) => {
     const r = await loadRequestForAdmin(tx, workspaceId, requestId, true);
+    if (r.case_kind === "template") throw new HttpError(409, "Templates cannot be sent for signature. Create a case from this template first.");
     if (r.status !== "pending") throw new HttpError(409, "Only a pending request can be revoked.");
     await tx`update signing_requests set status = 'revoked', revoked_at = now(), token_ciphertext = null where id = ${requestId}`;
     await logEvent(tx, { caseId: r.case_id, requestId, type: "request_revoked", actor: "admin", meta });
@@ -419,6 +541,7 @@ export async function revokeRequest(workspaceId: string, requestId: string, meta
 export async function restartRequest(workspaceId: string, requestId: string, meta: RequestMeta) {
   return sql().begin(async (tx) => {
     const r = await loadRequestForAdmin(tx, workspaceId, requestId, true);
+    if (r.case_kind === "template") throw new HttpError(409, "Templates cannot be sent for signature. Create a case from this template first.");
     const eff = effectiveStatus(r.status, r.expires_at);
     if (eff !== "revoked" && eff !== "expired") throw new HttpError(409, "Only a revoked or expired request can be restarted.");
     const [latest] = await tx<{ id: string }[]>`
@@ -480,7 +603,7 @@ export async function getSignerView(token: string): Promise<SignerView | null> {
            w.name as ws_name, d.filename, d.page_count
     from signing_requests r join cases c on c.id = r.case_id join workspaces w on w.id = c.workspace_id
     join documents d on d.id = r.document_id
-    where r.token_hash = ${hashSecret(token)}`;
+    where r.token_hash = ${hashSecret(token)} and c.kind = 'client'`;
   if (!r) return null;
   const fields = await db<FieldRow[]>`
     select id, kind, page_index, x, y, width, height from signature_fields
@@ -533,6 +656,7 @@ const utc = (d: Date) => d.toISOString().replace("T", " ").replace(/\.\d+Z$/, " 
 const eventLabels: Record<string, string> = {
   case_created: "Case created",
   document_uploaded: "Document uploaded",
+  document_from_template: "Document and fields copied from saved template",
   request_created: "Signing link created",
   signing_page_opened: "Signer opened signing page",
   consent_given: "Signer consented to electronic signature",
