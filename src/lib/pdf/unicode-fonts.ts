@@ -121,13 +121,40 @@ function winAnsiEncodable(font: PDFFont, ch: string) {
   }
 }
 
+export interface TextRun {
+  font: PDFFont;
+  text: string;
+}
+
 /**
- * Chooses a font per string. Returns the base (Helvetica) font when it can encode the whole
- * string; otherwise a Noto subset embedded for exactly this string. Characters that no bundled
- * font covers become "?" (as before), so stamping never fails on an unusual name.
+ * Text resolved for drawing: `text` is what will be printed (unsupported characters → "?"), and
+ * `segment` splits any substring of it into runs that each use one font.
+ */
+export interface StyledText {
+  text: string;
+  /** Font used for vertical metrics (the string's main font). */
+  primary: PDFFont;
+  segment(s: string): TextRun[];
+  widthOf(s: string, size: number): number;
+}
+
+function styledSingle(font: PDFFont, text: string): StyledText {
+  return {
+    text,
+    primary: font,
+    segment: (s) => [{ font, text: s }],
+    widthOf: (s, size) => font.widthOfTextAtSize(s, size),
+  };
+}
+
+/**
+ * Chooses fonts per string. When Helvetica can encode the whole string it is used alone (output
+ * identical to before). Otherwise the string's main Noto font (CJK if it contains CJK, else
+ * Latin/Greek/Cyrillic) draws every character it covers, the other Noto font fills the gaps, and
+ * characters no bundled font covers become "?", so stamping never fails on an unusual name.
  */
 export class TextFonts {
-  private cache = new Map<string, Promise<{ font: PDFFont; text: string }>>();
+  private cache = new Map<string, Promise<StyledText>>();
   constructor(
     private doc: PDFDocument,
     private base: PDFFont,
@@ -135,10 +162,9 @@ export class TextFonts {
     doc.registerFontkit(fontkit);
   }
 
-  /** Resolve the font and the drawable text (unsupported characters replaced by "?"). */
-  async resolve(raw: string): Promise<{ font: PDFFont; text: string }> {
+  async resolve(raw: string): Promise<StyledText> {
     const text = raw.normalize("NFC");
-    if ([...text].every((ch) => winAnsiEncodable(this.base, ch))) return { font: this.base, text };
+    if ([...text].every((ch) => winAnsiEncodable(this.base, ch))) return styledSingle(this.base, text);
     let hit = this.cache.get(text);
     if (!hit) {
       hit = this.embedFor(text);
@@ -147,24 +173,56 @@ export class TextFonts {
     return hit;
   }
 
-  private async embedFor(text: string): Promise<{ font: PDFFont; text: string }> {
-    const key: FontKey = CJK.test(text) ? "cjk" : "latin";
-    const cov = coverageFor(key);
+  private async embedFor(text: string): Promise<StyledText> {
+    const primaryKey: FontKey = CJK.test(text) ? "cjk" : "latin";
+    const order: FontKey[] = primaryKey === "cjk" ? ["cjk", "latin"] : ["latin", "cjk"];
+    const byChar = new Map<string, FontKey>();
+    const used: Record<FontKey, string> = { latin: "", cjk: "" };
     let drawable = "";
     for (const ch of text) {
+      if (/\s/.test(ch)) {
+        drawable += ch;
+        continue;
+      }
       const cp = ch.codePointAt(0)!;
-      drawable += /\s/.test(ch) || cov.hasGlyphForCodePoint(cp) ? ch : "?";
+      const key = order.find((k) => coverageFor(k).hasGlyphForCodePoint(cp));
+      const out = key ? ch : "?";
+      drawable += out;
+      byChar.set(out, key ?? primaryKey);
+      used[key ?? primaryKey] += out;
     }
     try {
-      const sub = await subsetFont(bytesFor(key), drawable + "?");
-      const font = await this.doc.embedFont(sub, { subset: false });
-      return { font, text: drawable };
+      const fonts = new Map<FontKey, PDFFont>();
+      for (const k of order) {
+        // Always embed the primary font (with space and "?") so every run has a font.
+        if (k !== primaryKey && !used[k]) continue;
+        const sub = await subsetFont(bytesFor(k), used[k] + " ?");
+        fonts.set(k, await this.doc.embedFont(sub, { subset: false }));
+      }
+      const primary = fonts.get(primaryKey)!;
+      const fontOf = (ch: string) => fonts.get(byChar.get(ch) ?? primaryKey) ?? primary;
+      const segment = (s: string): TextRun[] => {
+        const runs: TextRun[] = [];
+        for (const ch of s) {
+          const font = /\s/.test(ch) ? (runs.at(-1)?.font ?? primary) : fontOf(ch);
+          const last = runs.at(-1);
+          if (last && last.font === font) last.text += ch;
+          else runs.push({ font, text: ch });
+        }
+        return runs;
+      };
+      return {
+        text: drawable,
+        primary,
+        segment,
+        widthOf: (s, size) => segment(s).reduce((w, r) => w + r.font.widthOfTextAtSize(r.text, size), 0),
+      };
     } catch (e) {
       // Never block a signature on font handling: fall back to the previous "?" behaviour.
       console.error("Unicode font embedding failed:", e instanceof Error ? e.message : e);
       let fallback = "";
       for (const ch of text) fallback += winAnsiEncodable(this.base, ch) ? ch : "?";
-      return { font: this.base, text: fallback };
+      return styledSingle(this.base, fallback);
     }
   }
 }

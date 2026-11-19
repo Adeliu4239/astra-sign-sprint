@@ -78,15 +78,18 @@ describe("Unicode text in signed PDFs", () => {
     ["rare-ish name characters", "張堃喆"],
     ["Japanese", "山田 太郎 やまだ"],
     ["mixed CJK and Latin", "李 Wei Zhang"],
+    ["mixed CJK and extended Latin (two fonts in one string)", "李小龍 Łukasz Đặng-Nguyễn"],
     ["Latin Extended / Vietnamese", "Łukasz Đặng Nguyễn"],
     ["Turkish and Nordic", "Şahin Ğül Øyvind"],
     ["Greek and Cyrillic", "Ελένη Дмитрий"],
   ])("%s: %s prints as typed in the name field and on the certificate", async (_label, name) => {
     const out = await sign(name);
-    const field = (await pageText(out, 1)).text.replace(/\s+/g, " ");
-    const cert = (await pageText(out, 2)).text.replace(/\s+/g, " ");
-    expect(field).toContain(name);
-    expect(cert).toContain(name);
+    // pdf.js splits text items at font changes, so compare without whitespace.
+    const squash = (t: string) => t.replace(/\s+/g, "");
+    const field = squash((await pageText(out, 1)).text);
+    const cert = squash((await pageText(out, 2)).text);
+    expect(field).toContain(squash(name));
+    expect(cert).toContain(squash(name));
     expect(field).not.toContain("?");
     expect(await embeddedFontKinds(out)).toContain("/Type0"); // embedded Unicode (CID) font
     expect(out.byteLength).toBeLessThan(200_000); // subset, not the whole 7.5 MB font

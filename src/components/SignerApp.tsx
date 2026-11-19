@@ -234,7 +234,7 @@ export function SignerApp({ token, clientName, filename, pageCount, fields }: Pr
               {!consent ? "Tick the consent box." : ""}
             </p>
           )}
-          {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+          {error && <p role="alert" data-testid="sign-error" className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</p>}
         </form>
       </aside>
     </div>

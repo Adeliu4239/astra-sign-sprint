@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+// No eval-based JIT: our CSP forbids 'unsafe-eval', and this also stops Zod's eval feature probe
+// from logging CSP violations in the browser console.
+z.config({ jitless: true });
+
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 /** Files above this go through chunked upload (Vercel limits request bodies to ~4.5 MB). */
 export const SINGLE_UPLOAD_MAX_BYTES = 3 * 1024 * 1024;
