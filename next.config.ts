@@ -35,7 +35,11 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  serverExternalPackages: ["pdf-lib", "@cantoo/pdf-lib"],
+  serverExternalPackages: ["pdf-lib", "@cantoo/pdf-lib", "@pdf-lib/fontkit"],
+  // Read from disk at signing time (src/lib/pdf/unicode-fonts.ts), so trace them into the function.
+  outputFileTracingIncludes: {
+    "/api/sign/submit": ["./assets/fonts/*.ttf", "./node_modules/harfbuzzjs/dist/harfbuzz-subset.wasm"],
+  },
   turbopack: {
     rules: {
       "*.css": {
