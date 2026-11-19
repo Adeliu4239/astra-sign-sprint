@@ -61,31 +61,48 @@ export function FieldEditor({ requestId, documentUrl, initialFields, mode = "cas
     fieldsRef.current = fields;
   }, [fields]);
 
-  const save = useCallback(async (): Promise<boolean> => {
+  const inFlight = useRef<Promise<boolean> | null>(null);
+  const hadSignature = useRef(initialFields.some((f) => f.kind === "signature"));
+
+  // Saves are serialised: each PUT sends the latest layout, and an older request can never land
+  // after a newer one and overwrite it.
+  const save = useCallback((): Promise<boolean> => {
     clearTimeout(saveTimer.current);
-    dirty.current = false;
-    setSaveState("saving");
-    try {
-      const res = await fetch(`/api/requests/${requestId}/fields`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fields: fieldsRef.current.map(({ kind, pageIndex, x, y, width, height }) => ({ kind, pageIndex, x, y, width, height })),
-        }),
-      });
-      if (!res.ok) throw new Error(await apiError(res));
-      setSaveState("saved");
-      setSaveError(null);
-      // Templates: refresh server-rendered readiness ("New case from this template") after each save.
-      if (mode === "template" && !dirty.current) router.refresh();
-      return true;
-    } catch (e) {
-      dirty.current = true;
-      setSaveState("error");
-      setSaveError(e instanceof Error ? e.message : "Could not save fields");
-      return false;
-    }
-  }, [requestId, mode, router]);
+    const run = async (): Promise<boolean> => {
+      dirty.current = false;
+      setSaveState("saving");
+      try {
+        const res = await fetch(`/api/requests/${requestId}/fields`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fields: fieldsRef.current.map(({ kind, pageIndex, x, y, width, height }) => ({ kind, pageIndex, x, y, width, height })),
+          }),
+        });
+        if (!res.ok) throw new Error(await apiError(res));
+        setSaveState(dirty.current ? "dirty" : "saved");
+        setSaveError(null);
+        const hasSignature = fieldsRef.current.some((f) => f.kind === "signature");
+        if (hasSignature !== hadSignature.current) {
+          hadSignature.current = hasSignature;
+          router.refresh(); // Draft <-> Ready badge; template "New case" readiness
+        }
+        return true;
+      } catch (e) {
+        dirty.current = true;
+        setSaveState("error");
+        const msg = e instanceof TypeError ? "Connection problem — your latest field changes are not saved yet." : e instanceof Error ? e.message : "Could not save fields";
+        setSaveError(msg);
+        return false;
+      }
+    };
+    const p = (inFlight.current ?? Promise.resolve(true)).then(run);
+    inFlight.current = p;
+    void p.finally(() => {
+      if (inFlight.current === p) inFlight.current = null;
+    });
+    return p;
+  }, [requestId, router]);
 
   const update = useCallback(
     (fn: (prev: EditorField[]) => EditorField[]) => {
@@ -100,14 +117,32 @@ export function FieldEditor({ requestId, documentUrl, initialFields, mode = "cas
 
   useEffect(() => () => clearTimeout(saveTimer.current), []);
 
-  // Warn before leaving with unsaved changes.
+  // Warn before leaving with unsaved or still-saving changes (reload, close, external links).
   useEffect(() => {
     const h = (e: BeforeUnloadEvent) => {
-      if (dirty.current) e.preventDefault();
+      if (dirty.current || inFlight.current) e.preventDefault();
     };
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
   }, []);
+
+  // In-app links (header, "All cases") don't fire beforeunload: finish saving first, and only
+  // leave without saving if the admin explicitly agrees.
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (!(dirty.current || inFlight.current) || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.hasAttribute("download") || a.origin !== window.location.origin) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const href = a.pathname + a.search + a.hash;
+      void save().then((ok) => {
+        if (ok || window.confirm("Your latest field changes could not be saved. Leave this page anyway?")) router.push(href);
+      });
+    };
+    document.addEventListener("click", h, true);
+    return () => document.removeEventListener("click", h, true);
+  }, [save, router]);
 
   // Keyboard: Delete removes, arrows nudge the selected field.
   useEffect(() => {

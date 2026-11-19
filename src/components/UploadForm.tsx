@@ -31,16 +31,34 @@ async function uploadChunked(caseId: string, file: File, onProgress: (pct: numbe
   if (!done.ok) throw new Error(await apiError(done));
 }
 
-export function UploadForm({ caseId, replacing = false }: { caseId: string; replacing?: boolean }) {
+export function UploadForm({ caseId, replacing = false, fieldCount = 0 }: { caseId: string; replacing?: boolean; fieldCount?: number }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  // Replacing a PDF discards its placed fields: ask first.
+  const [confirming, setConfirming] = useState<File | null>(null);
+
+  const choose = (file: File | undefined) => {
+    if (!file) return;
+    if (replacing && fieldCount > 0) {
+      setError(null);
+      setConfirming(file);
+      return;
+    }
+    void upload(file);
+  };
+
+  const cancelReplace = () => {
+    setConfirming(null);
+    if (input.current) input.current.value = "";
+  };
 
   const upload = async (file: File | undefined) => {
     if (!file) return;
+    setConfirming(null);
     setError(null);
     if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") {
       setError("Only PDF files are supported.");
@@ -74,7 +92,7 @@ export function UploadForm({ caseId, replacing = false }: { caseId: string; repl
   // A file picked before hydration never fired onChange: pick it up once React is ready.
   useEffect(() => {
     const f = input.current?.files?.[0];
-    if (f) void upload(f);
+    if (f) choose(f);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -83,9 +101,25 @@ export function UploadForm({ caseId, replacing = false }: { caseId: string; repl
       <div className="flex flex-col items-end gap-1">
         <label className="btn-secondary cursor-pointer">
           {busy ? (progress !== null && progress < 90 ? `Uploading ${progress}%` : "Uploading…") : "Replace PDF"}
-          <input ref={input} type="file" accept="application/pdf,.pdf" className="sr-only" disabled={busy} onChange={(e) => upload(e.target.files?.[0])} />
+          <input ref={input} type="file" accept="application/pdf,.pdf" className="sr-only" disabled={busy} onChange={(e) => choose(e.target.files?.[0])} />
         </label>
-        {error && <p role="alert" className="max-w-xs text-right text-xs text-red-600">{error}</p>}
+        {confirming && (
+          <div role="alertdialog" aria-labelledby="replace-confirm-title" data-testid="replace-confirm" className="mt-1 max-w-xs rounded-lg border border-amber-300 bg-amber-50 p-3 text-left text-xs text-amber-900 shadow">
+            <p id="replace-confirm-title" className="font-semibold">Replace the PDF with “{confirming.name}”?</p>
+            <p className="mt-1">
+              The fields placed on the current document will be removed. You will place them again on the new PDF.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button type="button" className="btn-primary px-3 py-1 text-xs" data-testid="replace-confirm-yes" onClick={() => void upload(confirming)}>
+                Replace PDF
+              </button>
+              <button type="button" className="btn-secondary px-3 py-1 text-xs" data-testid="replace-confirm-no" onClick={cancelReplace}>
+                Keep current PDF
+              </button>
+            </div>
+          </div>
+        )}
+        {error && <p role="alert" data-testid="upload-error" className="max-w-xs text-right text-xs text-red-600">{error}</p>}
       </div>
     );
   }

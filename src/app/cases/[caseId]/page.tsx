@@ -14,6 +14,7 @@ import { getCaseDetail, revealToken, signerUrl } from "@/lib/server/service";
 import { HttpError } from "@/lib/server/errors";
 import { originFromHeaders } from "@/lib/server/http";
 import { formatBytes, formatUtc } from "@/lib/format";
+import { caseStage } from "@/lib/signing/state";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,13 @@ const EVENT_LABEL: Record<string, string> = {
   document_signed: "Signer submitted signature",
   request_completed: "Signed PDF generated — completed",
   signing_attempt_rejected: "Rejected attempt to reuse a closed link",
+};
+
+const REJECT_REASON: Record<string, string> = {
+  completed: "already signed",
+  revoked: "link revoked",
+  expired: "link expired",
+  not_sent: "request not active",
 };
 
 export default async function CasePage({ params }: { params: Promise<{ caseId: string }> }) {
@@ -70,8 +78,8 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
               )}
             </div>
             <div className="flex items-center gap-3">
-              <StatusBadge status={status} />
-              {status === "draft" && <UploadForm caseId={c.id} replacing />}
+              <StatusBadge stage={caseStage(status, fields.filter((f) => f.kind === "signature").length)} />
+              {status === "draft" && <UploadForm caseId={c.id} replacing fieldCount={fields.length} />}
             </div>
           </div>
         </div>
@@ -169,7 +177,12 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
             {events.map((e) => (
               <li key={e.id} className="flex flex-wrap gap-x-3" data-event={e.event_type}>
                 <span className="w-40 shrink-0 font-mono text-xs text-slate-500">{formatUtc(e.occurred_at)}</span>
-                <span>{EVENT_LABEL[e.event_type] ?? e.event_type}</span>
+                <span>
+                  {EVENT_LABEL[e.event_type] ?? e.event_type}
+                  {e.event_type === "signing_attempt_rejected" && typeof (e.metadata as { reason?: unknown })?.reason === "string" && (
+                    <span className="text-slate-500"> ({REJECT_REASON[(e.metadata as { reason: string }).reason] ?? (e.metadata as { reason: string }).reason})</span>
+                  )}
+                </span>
                 <span className="text-xs text-slate-400">{e.actor}</span>
               </li>
             ))}

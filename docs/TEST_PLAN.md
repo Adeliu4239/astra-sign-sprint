@@ -56,3 +56,17 @@ Robustness checks run outside the suite (scripts in the session, results rendere
 **Not covered by automation:** a physical iOS/Android device (WebKit desktop engine and mobile viewport emulation are covered), screen-reader pass, and real-world scanned PDFs (wasm image decoders are configured but not exercised with a JBIG2 sample).
 
 **Templates release (2026-11-19, deployed `933bb75`):** integration 6/6 (local Postgres); production `E2E_BROWSERS=chromium,webkit,firefox` → 24/24 on re-run (first run 23/24: one Firefox `page.reload` aborted by an in-flight client refresh; the template scenario then passed 9/9 with `--repeat-each=3`).
+
+**Final release (2026-11-19; application code `a911a9f`, deployed `dpl_3HdtQDypyiJpaZdnkx77iA5sm3R4` at `4f25688`):**
+
+| Check | Command | Result |
+|---|---|---|
+| Typecheck, lint, build | `npm run typecheck && npm run lint && npm run build` | pass |
+| Unit (coordinates, stamping, Unicode names, stages, decryption) | `npm test` | 51/51 |
+| Integration, local Postgres only (templates; rate limits incl. 25 concurrent hits; storage quota incl. concurrency and template copies; upload-session cap/expiry/retry) | `npm run test:integration` | 18/18 |
+| Production E2E, all engines | `E2E_BROWSERS=chromium,webkit,firefox E2E_BASE_URL=https://astra-sign-sprint.vercel.app npm run test:e2e` | **42/42** (23:00 UTC) |
+| Production refresh regression | same, `tests/e2e/refresh.spec.ts` | **9/9** |
+| Manual walkthrough (desktop + phone, synthetic data) | scripted in a gitignored folder; link field masked in screenshots | pass |
+
+Earlier today: the first production run after PR #3 was 40/42 because of a Firefox `page.reload` race in two tests, fixed in the tests by #5. One run reached the app's own per-IP limit of 150 new workspaces per hour (28/42). The limiter was working as designed, and production counters were not cleared. Production E2E creates about 48 workspaces per three-engine run, so avoid more than about 3 runs per hour from one IP.
+

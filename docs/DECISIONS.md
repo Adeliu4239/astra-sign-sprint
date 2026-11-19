@@ -32,7 +32,9 @@ Dates in Detroit time. "Status" reflects what is in the deployed build.
 | Owner-password ("restrictions only") PDFs are decrypted server-side with `@cantoo/pdf-lib`; PDFs that need a password to open are rejected with instructions | Protected business PDFs are common; pdf-lib can't write to encrypted files | The decrypted copy becomes the case original. The audit event records both the uploaded and stored SHA-256 | Implemented, unit-tested |
 | PDF.js legacy build + bundled standard fonts, CMaps, wasm decoders, ICC profiles | Wider browser support (older Safari) and faithful rendering of non-embedded fonts, CJK and scanned JPX/JBIG2 pages | ~4 MB of static assets in `public/pdfjs` (copied by `postinstall`) | Implemented |
 | Upload validation: extension or MIME type, `%PDF-` magic in the first 1 KB, full parse of every page, ≤ 300 pages, ≤ 25 MB | Unknown input | Clear 4xx messages are shown in the UI | Implemented |
-| Name/date text uses standard Helvetica (WinAnsi) | No font embedding needed | Characters outside WinAnsi (e.g. CJK) print as `?` in name fields. The **signature image** is unaffected | Known limitation |
+| Name/date text uses standard Helvetica (WinAnsi) when it can encode the string; otherwise OFL Noto Sans / Noto Sans SC, subset per string by HarfBuzz (`harfbuzzjs`) and embedded by pdf-lib (`assets/fonts/README.md`) | FINAL_QA Q-1: non-Latin names printed as `?`. pdf-lib's own subsetter drops glyphs from these fonts, so HarfBuzz does the subsetting | Latin-1 output is unchanged. Chinese, Japanese kana, extended Latin/Vietnamese, Greek and Cyrillic render in the name field and on the certificate, including mixed scripts. Hangul, Arabic, Hebrew, Indic and emoji still print `?`. Font failure falls back to `?` rather than blocking signing | Implemented; in production since 2026-11-19 (`a911a9f`) |
+| Abuse and resource limits in Postgres (rate limits, storage quota, upload-session caps), plus a CSP | Serverless instances share no memory, so in-memory limits wouldn't work. Thresholds are set so evaluators never hit them | See `docs/SECURITY_LIMITS.md` | Implemented; in production since 2026-11-19 (`a911a9f`, migration 004) |
+| Case stages Draft / Ready / Pending / Completed / Expired / Revoked, with a next step per case, search and status filter | "Draft" alone didn't say whether the case could be sent | Display-only: the request state machine is unchanged | Implemented; in production since 2026-11-19 (`a911a9f`) |
 
 ## Deliberately excluded
 - **AI contract analysis / auto-placement**: unreliable on unseen layouts and unnecessary for the core flow. We don't send documents to third-party AI.
@@ -40,8 +42,7 @@ Dates in Detroit time. "Status" reflects what is in the deployed build.
 - **Multi-party routing, witnesses, notary**: not required.
 - **Identity verification, qualified signatures, regulatory certification**: can't honestly be established in a prototype. No compliance claims are made.
 - **Accounts / team management**: replaced by isolated self-service demo workspaces.
-- **Server-sent email (Resend)**: optional. Link copy and `mailto:` cover delivery without fake success states.
-- **Rate limiting**: not implemented. Tokens are 256-bit (not guessable) and signing is single-use, but workspace creation and uploads are not throttled. This is the next security item for a real deployment.
+- **Server-sent email** remains excluded: no verified email provider or sender is configured, so nothing could be tested safely. Copy link and `mailto:` stay the delivery paths, and the app never claims an email was sent.
 
 ## Open questions resolved by defaults
 - File = case for exactly one client; one active signing request per case (revoke + "start a new request" re-issues).

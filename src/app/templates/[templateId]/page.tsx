@@ -48,7 +48,7 @@ export default async function TemplatePage({ params }: { params: Promise<{ templ
                   New case from this template
                 </Link>
               )}
-              {document && <UploadForm caseId={t.id} replacing />}
+              {document && <UploadForm caseId={t.id} replacing fieldCount={fields.length} />}
               <DeleteTemplateButton templateId={t.id} name={t.title} />
             </div>
           </div>
