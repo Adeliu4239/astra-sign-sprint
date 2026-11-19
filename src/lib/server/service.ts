@@ -3,6 +3,8 @@ import type postgres from "postgres";
 import { sql } from "./db";
 import { decrypt, encrypt, hashIp, hashSecret, newSecret, sha256Hex } from "./crypto";
 import { HttpError } from "./errors";
+import { enforceStorageQuota } from "./limits";
+import { LIMITS } from "@/lib/limits";
 import { inspectPdf, stampPdf, type AuditLine } from "@/lib/pdf/stamp";
 import { decryptOwnerProtectedPdf } from "@/lib/pdf/decrypt";
 import {
@@ -230,14 +232,20 @@ export async function uploadDocument(
 
   return sql().begin(async (tx) => {
     await loadCase(tx, workspaceId, caseId);
-    const [latest] = await tx<{ id: string; status: RequestStatus }[]>`
-      select id, status from signing_requests where case_id = ${caseId} order by created_at desc limit 1 for update`;
+    const [latest] = await tx<{ id: string; status: RequestStatus; document_id: string }[]>`
+      select id, status, document_id from signing_requests where case_id = ${caseId} order by created_at desc limit 1 for update`;
     if (latest && (latest.status === "pending" || latest.status === "completed")) {
       throw new HttpError(409, "This case already has a document out for signature. Revoke the request before replacing the document.");
     }
     if (latest?.status === "draft") {
       await tx`delete from signing_requests where id = ${latest.id}`;
+      // The replaced draft PDF was never sent: drop it if nothing else references it, so it
+      // does not count against the storage quota. Signed artifacts are never touched here.
+      await tx`
+        delete from documents d where d.id = ${latest.document_id} and d.kind = 'original'
+          and not exists (select 1 from signing_requests r where r.document_id = d.id or r.signed_document_id = d.id)`;
     }
+    await enforceStorageQuota(tx, workspaceId, bytes.byteLength);
     const [doc] = await tx<{ id: string }[]>`
       insert into documents (case_id, kind, filename, mime, size_bytes, page_count, sha256, content)
       values (${caseId}, 'original', ${filename}, 'application/pdf', ${bytes.byteLength}, ${info.pageCount}, ${sha}, ${Buffer.from(bytes)})
@@ -267,22 +275,37 @@ export async function uploadDocument(
 export async function startChunkedUpload(workspaceId: string, caseId: string, filename: string, mime: string, size: number) {
   if (size > MAX_UPLOAD_BYTES) throw new HttpError(413, `The limit is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`);
   if (!/\.pdf$/i.test(filename) && mime !== "application/pdf") throw new HttpError(415, "Only PDF files are supported.");
-  const db = sql();
-  await loadCase(db, workspaceId, caseId);
-  // Opportunistic cleanup of abandoned sessions.
-  await db`delete from upload_sessions where created_at < now() - interval '1 day'`;
   const chunkCount = Math.ceil(size / UPLOAD_CHUNK_BYTES);
-  const [u] = await db<{ id: string }[]>`
-    insert into upload_sessions (case_id, filename, mime, total_bytes, chunk_count)
-    values (${caseId}, ${filename}, ${mime}, ${size}, ${chunkCount}) returning id`;
-  return { uploadId: u!.id, chunkSize: UPLOAD_CHUNK_BYTES, chunkCount };
+  return sql().begin(async (tx) => {
+    await loadCase(tx, workspaceId, caseId);
+    // Locks the workspace row (serialises concurrent starts) and refuses early when the file
+    // could never fit, before the browser sends 25 MB of chunks.
+    await enforceStorageQuota(tx, workspaceId, size);
+    // Abandoned sessions (any workspace) expire; a new upload for this case supersedes earlier
+    // unfinished ones, so a user retrying a failed upload is never blocked by their own leftovers.
+    await tx`delete from upload_sessions where created_at < now() - make_interval(mins => ${LIMITS.uploadSessionTtlMinutes})`;
+    await tx`delete from upload_sessions where case_id = ${caseId}`;
+    const [openRow] = await tx<{ open: number }[]>`
+      select count(*)::int as open from upload_sessions u join cases c on c.id = u.case_id
+      where c.workspace_id = ${workspaceId}`;
+    if ((openRow?.open ?? 0) >= LIMITS.concurrentUploadSessions) {
+      throw new HttpError(429, `Too many uploads in progress in this workspace (limit ${LIMITS.concurrentUploadSessions}). Wait for them to finish and try again.`, "upload_concurrency", {
+        "Retry-After": "60",
+      });
+    }
+    const [u] = await tx<{ id: string }[]>`
+      insert into upload_sessions (case_id, filename, mime, total_bytes, chunk_count)
+      values (${caseId}, ${filename}, ${mime}, ${size}, ${chunkCount}) returning id`;
+    return { uploadId: u!.id, chunkSize: UPLOAD_CHUNK_BYTES, chunkCount };
+  });
 }
 
 async function loadUploadSession(workspaceId: string, uploadId: string) {
   if (!/^[0-9a-f-]{36}$/i.test(uploadId)) throw new HttpError(404, "Upload not found");
   const [u] = await sql()<{ id: string; case_id: string; filename: string; mime: string; total_bytes: number; chunk_count: number }[]>`
     select u.id, u.case_id, u.filename, u.mime, u.total_bytes, u.chunk_count from upload_sessions u
-    join cases c on c.id = u.case_id where u.id = ${uploadId} and c.workspace_id = ${workspaceId}`;
+    join cases c on c.id = u.case_id where u.id = ${uploadId} and c.workspace_id = ${workspaceId}
+      and u.created_at >= now() - make_interval(mins => ${LIMITS.uploadSessionTtlMinutes})`;
   if (!u) throw new HttpError(404, "Upload not found or expired. Please start the upload again.");
   return u;
 }

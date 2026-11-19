@@ -13,8 +13,9 @@ const steps = [
   ["Download the signed PDF", "Signature stamped exactly where you placed it, plus an audit certificate."],
 ];
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const ws = await currentWorkspace();
+  const { error } = await searchParams;
   return (
     <>
       <AppHeader workspaceName={ws?.name} />
@@ -40,6 +41,11 @@ export default async function Home() {
               )}
               <span className="text-sm text-slate-500">No sign-up. Your demo workspace is private to this browser.</span>
             </div>
+            {error === "rate_limited" && !ws && (
+              <p role="alert" data-testid="home-error" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                Too many demo workspaces were opened from this network in the last hour. Please try again later, or continue in a browser that already has a workspace.
+              </p>
+            )}
           </div>
           <ol className="card grid gap-4 p-6 sm:grid-cols-2">
             {steps.map(([title, body], i) => (

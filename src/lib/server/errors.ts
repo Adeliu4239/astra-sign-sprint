@@ -7,6 +7,7 @@ export class HttpError extends Error {
     public status: number,
     message: string,
     public code?: string,
+    public headers?: Record<string, string>,
   ) {
     super(message);
   }
@@ -19,7 +20,7 @@ export function handle<A extends unknown[]>(fn: (...args: A) => Promise<Response
       return await fn(...args);
     } catch (err) {
       if (err instanceof HttpError) {
-        return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+        return NextResponse.json({ error: err.message, code: err.code }, { status: err.status, headers: err.headers });
       }
       if (err instanceof ZodError) {
         const msg = err.issues.map((i) => i.message).join("; ");
