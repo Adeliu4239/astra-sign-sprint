@@ -4,16 +4,20 @@ import { AppHeader } from "@/components/AppHeader";
 import { NewCaseForm } from "@/components/NewCaseForm";
 import { StatusBadge } from "@/components/StatusBadge";
 import { currentWorkspace } from "@/lib/server/session";
-import { listCases } from "@/lib/server/service";
+import { listCases, listTemplates } from "@/lib/server/service";
 import { formatUtc } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error } = await searchParams;
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ error?: string; template?: string }> }) {
+  const { error, template } = await searchParams;
   const ws = await currentWorkspace();
   if (!ws) redirect("/");
-  const cases = await listCases(ws.id);
+  const [cases, templates] = await Promise.all([listCases(ws.id), listTemplates(ws.id)]);
+  const usable = templates
+    .filter((t) => t.filename && t.signature_fields > 0)
+    .map((t) => ({ id: t.id, name: t.name, detail: `${t.page_count} page${t.page_count === 1 ? "" : "s"}, ${t.total_fields} field${t.total_fields === 1 ? "" : "s"}` }));
+  const defaultTemplateId = typeof template === "string" && usable.some((t) => t.id === template) ? template : "";
   const counts = {
     total: cases.length,
     pending: cases.filter((c) => c.status === "pending").length,
@@ -33,8 +37,17 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
 
         <section className="card p-5">
-          <h2 className="mb-3 font-semibold">New case</h2>
-          <NewCaseForm initialError={typeof error === "string" ? error.slice(0, 300) : null} />
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-semibold">New case</h2>
+            <Link href="/templates" className="text-xs text-indigo-700 hover:underline">
+              {usable.length > 0 ? "Manage agreement templates" : "Same agreement for every client? Save it as a template →"}
+            </Link>
+          </div>
+          <NewCaseForm
+            initialError={typeof error === "string" ? error.slice(0, 300) : null}
+            templates={usable}
+            defaultTemplateId={defaultTemplateId}
+          />
         </section>
 
         <section className="card overflow-hidden">
