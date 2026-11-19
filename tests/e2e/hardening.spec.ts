@@ -129,6 +129,9 @@ test("replacing a PDF with placed fields asks first; cancel keeps the fields", a
   await uploadPdf(page, "first.pdf");
   await placeSignature(page);
   await expect(page.getByTestId("save-state")).toHaveText("Saved");
+  // The first signature field triggers a background refresh (Draft -> Ready); let it land before
+  // reloading, or Firefox aborts page.reload() with NS_BINDING_ABORTED.
+  await expect(page.getByTestId("status-badge")).toHaveText("Ready");
   await page.reload();
   const replaceInput = page.locator("label", { hasText: "Replace PDF" }).locator('input[type="file"]');
   const second = { name: "second.pdf", mimeType: "application/pdf", buffer: await makeAgreementPdf("second") };

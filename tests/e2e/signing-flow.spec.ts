@@ -58,7 +58,9 @@ test("unknown multi-page PDF: place signature on page 2, sign in a separate brow
   await expect(page.getByTestId("placed-field")).toHaveCount(2);
   await expect(page.getByTestId("save-state")).toHaveText("Saved");
 
-  // Placement survives a refresh, and a placed signature field makes the case Ready.
+  // Placement survives a refresh, and a placed signature field makes the case Ready. The badge
+  // updates in place first (background refresh); wait for it so Firefox doesn't abort the reload.
+  await expect(page.getByTestId("status-badge")).toHaveText("Ready");
   await page.reload();
   await expect(page.getByTestId("status-badge")).toHaveText("Ready");
   await expect(page.locator('[data-testid="placed-field"][data-page="2"][data-kind="signature"]')).toHaveCount(1);
