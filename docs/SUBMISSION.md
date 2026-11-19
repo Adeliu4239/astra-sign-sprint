@@ -15,6 +15,8 @@ FileSign is a self-service agreement-signing workflow for a company that opens o
 6. Paste the link into a **private/incognito window** (or another device). Review the pages, draw or type the signature, tick the consent box → **Agree & sign**. Optionally download the signed copy.
 7. Back in the first window the case shows **Completed** (it refreshes itself). Click **Download signed PDF**. Opening the signing link again shows "already signed"; it cannot be signed twice.
 
+Optional, for an agreement every client signs: **Templates** → name it → upload the PDF → place the fields once. Then in **New case** pick the template; the case starts with its own copy of the PDF and fields, ready for step 5.
+
 ## Included features and why
 - **Arbitrary PDF upload with validation** (PDF magic bytes, full parse of every page, ≤ 300 pages, ≤ 25 MB; clear errors for corrupt, non-PDF or password-required files). The MIND agreement is unseen, so nothing is templated.
 - **Chunked upload for large files and streamed PDF responses**: Vercel limits function bodies to ~4.5 MB. Scanned agreements still work (verified with a 9 MB PDF in production).
@@ -25,13 +27,14 @@ FileSign is a self-service agreement-signing workflow for a company that opens o
 - **Signer experience**: all pages rendered, highlighted "Sign here" areas with a live preview of the signature in place, draw (mouse/touch/stylus) or type, explicit consent text, and double-submit protection. Works on phones.
 - **Atomic, idempotent completion**: row lock + compare-and-set. The artifact, status change and audit events commit in one transaction. Replays get 409 and are logged.
 - **Evidence**: original and signed SHA-256, UTC event log (created, link issued, page opened, consent, signed, completed, rejected reuse attempts) shown on the case page. A certificate page inside the signed PDF records signer, consent text, events, original hash and hashed IP.
+- **Reusable agreement templates** (optional; direct upload stays the default): save the standard agreement and its field layout once, then start each client case from it. Each case gets its own copy of the PDF and fields in one transaction, so editing or deleting a template never changes existing cases or issued links. Templates can never be sent for signature themselves.
 - **Tenant isolation between demo workspaces**: every admin query is scoped to the workspace. Tested: another workspace gets 404, and a request with no session gets 401.
 
 ## Features deliberately omitted and why
 - **Server-sent email (e.g. Resend)**: optional per the brief. Copy-link and `mailto:` deliver reliably without faking a send.
 - **AI field detection or contract parsing**: unreliable on unseen layouts, and real agreements should not go to third-party AI. Manual placement takes seconds.
 - **Accounts/teams**: replaced by isolated, self-service demo workspaces so the evaluator needs no credentials.
-- **Multi-signer routing, templates, payments, CRM integrations**: outside the core "one client, one agreement" job.
+- **Multi-signer routing, payments, CRM integrations**: outside the core "one client, one agreement" job.
 - **Identity verification / qualified e-signatures / compliance certification**: not claimed. The UI and certificate say so.
 
 ## Assumptions and limitations
@@ -58,6 +61,7 @@ FileSign is a self-service agreement-signing workflow for a company that opens o
 - **Production scenario (automated):** a freshly generated 3-page PDF (Letter, A4, and a /Rotate 90 page) is uploaded → signature placed on **page 2** and a date on the rotated page 3 → placement survives a refresh → link created → signed in a separate, cookie-less browser context (drawn signature, double-click submit) → the case shows Completed on the case page and dashboard → the downloaded PDF has 4 pages, page 1 untouched, and the page-2 signature image lies inside the placed rectangle (checked by parsing the PDF content stream) → link reuse returns 409, the original becomes 410, and the event log has all events.
 - Additional production E2E: non-PDF rejected with a message; invalid/incomplete link messages; a 9 MB PDF via chunked upload with streamed signed download; phone-viewport signer with a typed signature; revoke → link blocked → restart issues a new link; cross-workspace access denied.
 - **Visual check:** stamped pages rendered with PDF.js. The signature sits on the "Client signature" line on page 2, and the date reads upright on the rotated page.
+- **Templates release (2026-11-19, deployed `933bb75`, `dpl_2Z8CFritq4Gnscfw32C1ZhMPm7Uh`):** a Neon recovery branch was taken before the release; additive migration `003_templates.sql` applied in the production build (existing 84 cases defaulted to `kind = 'client'`; 42 completed requests untouched). Checks on `main`: typecheck, lint, unit 33/33, integration 6/6 (local Postgres), build pass. Production `E2E_BROWSERS=chromium,webkit,firefox` → **24/24 pass** on re-run. The first run was 23/24: one Firefox test-timing failure (`page.reload` aborted by an in-flight client refresh right after a confirmed save, no data effect); the template scenario then passed 9/9 across all three engines with `--repeat-each=3`.
 - **Known issues:** see limitations above.
 - **Independent QA (2026-11-18, production):** two new PDFs (5-page mixed sizes with CropBox offset, signed on p4; 3-page Chromium-generated, signed on p3 from a phone viewport) went end to end. 30 adversarial checks passed (bad, corrupt and password PDFs, 5 concurrent submits → exactly one 201, revoke/restart, expiry (local), cross-workspace 404s, token never in a request URL). No P0 found. Full matrix: `docs/FINAL_QA.md`.
-- **Git commit SHA (final):** the last commit before the deadline. Production is redeployed from that exact commit; check with the Vercel deployment's `githubCommitSha`. Application code is unchanged since `0cdff55`; later commits are docs, tests and QA scripts.
+- **Git commit SHA (final):** the last commit before the deadline. Production is redeployed from that exact commit; check with the Vercel deployment's `githubCommitSha`. The production deployment of 2026-11-19 is `933bb75` (templates).
