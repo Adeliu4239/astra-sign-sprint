@@ -58,8 +58,9 @@ test("unknown multi-page PDF: place signature on page 2, sign in a separate brow
   await expect(page.getByTestId("placed-field")).toHaveCount(2);
   await expect(page.getByTestId("save-state")).toHaveText("Saved");
 
-  // Placement survives a refresh.
+  // Placement survives a refresh, and a placed signature field makes the case Ready.
   await page.reload();
+  await expect(page.getByTestId("status-badge")).toHaveText("Ready");
   await expect(page.locator('[data-testid="placed-field"][data-page="2"][data-kind="signature"]')).toHaveCount(1);
   await expect(page.locator('[data-testid="placed-field"][data-page="3"][data-kind="date"]')).toHaveCount(1);
 
@@ -70,7 +71,7 @@ test("unknown multi-page PDF: place signature on page 2, sign in a separate brow
   const signerUrl = await urlInput.inputValue();
   expect(signerUrl).toMatch(/\/sign#[A-Za-z0-9_-]{40,}$/);
   expect(new URL(signerUrl).origin).toBe(new URL(baseURL!).origin);
-  await expect(page.getByTestId("status-badge")).toHaveText("Awaiting signature");
+  await expect(page.getByTestId("status-badge")).toHaveText("Pending");
 
   // 6. Signer in a separate, cookie-less browser context.
   const signerCtx = await browser.newContext();
@@ -284,7 +285,8 @@ test("revoked link cannot be used; restarting issues a new link with the same fi
   await ctx.close();
 
   await page.getByRole("button", { name: "Start a new signing request" }).click();
-  await expect(page.getByTestId("status-badge")).toHaveText("Draft");
+  // The new request keeps the fields, so it is immediately Ready to send.
+  await expect(page.getByTestId("status-badge")).toHaveText("Ready");
   await expect(page.locator('[data-testid="placed-field"][data-page="2"]')).toHaveCount(1);
   await page.getByTestId("create-link").click();
   const newUrl = await page.getByTestId("signer-url").inputValue();

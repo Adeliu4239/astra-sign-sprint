@@ -24,7 +24,8 @@ Built for the Astra AI Round 2 challenge.
 - Expiring single-use signer link (token hashed at rest, kept in the URL fragment so it never reaches server logs); copy, `mailto:`, revoke, restart
 - Signer: review all pages, draw or type, explicit consent, double-submit safe, mobile-friendly
 - Server-side stamping, immutable signed artifact + SHA-256, signing certificate page, UTC event log
-- Not implemented: server-sent email, accounts/teams, rate limiting, multi-signer. See `docs/DECISIONS.md`
+- Not implemented: server-sent email, accounts/teams, multi-signer. See `docs/DECISIONS.md`
+- **Pending review** on `feat/final-product-hardening` (not in production until merged and deployed): rate limits, storage quota and upload caps, CSP/HSTS (`docs/SECURITY_LIMITS.md`); case search, filters and Draft/Ready stages; replace-PDF confirmation; save and network-failure recovery; Unicode names in signed PDFs (`assets/fonts/README.md`)
 
 **Reusable agreement templates** (on `feat/reusable-agreement-templates`; *not yet released to production*): save a PDF plus its field layout once under **Templates**, then pick it in the new-case form. Each case gets its own copy of the PDF and fields in one transaction, so later template edits or deletion never change existing cases. Direct upload stays the default. Design: `docs/PRODUCT_GAP_ANALYSIS.md`.
 
@@ -43,8 +44,8 @@ npm run dev                    # http://localhost:3000
 ## Checks
 ```bash
 npm run typecheck && npm run lint && npm test   # unit tests (coordinates, stamping, state machine)
-npm run test:integration                        # DB-backed service tests (templates); local Postgres only
-npm run test:e2e                                # Playwright suite (8 tests) against local dev server
+npm run test:integration                        # DB-backed service tests (LOCAL Postgres only; refuses non-localhost URLs)
+npm run test:e2e                                # Playwright suites against local dev server
 E2E_BASE_URL=https://<deployment> npm run test:e2e   # same suite against a deployment
 E2E_BROWSERS=chromium,webkit,firefox npm run test:e2e  # all three engines
 npx tsx scripts/make-test-pdf.ts out.pdf        # fresh synthetic 3-page PDF (mixed sizes, rotated page)

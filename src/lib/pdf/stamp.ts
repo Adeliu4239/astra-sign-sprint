@@ -10,6 +10,7 @@ import {
   type Point,
   type Rotation,
 } from "./coordinates";
+import { TextFonts, type StyledText } from "./unicode-fonts";
 
 export type FieldKind = "signature" | "name" | "date";
 
@@ -73,32 +74,41 @@ function isolateExistingContent(doc: PDFDocument, page: PDFPage) {
   page.node.wrapContentStreams(start, end);
 }
 
-function drawFittedText(page: PDFPage, font: PDFFont, rawText: string, field: ReturnType<typeof normRectToPdf>) {
-  const text = encodableText(font, rawText);
+function drawFittedText(page: PDFPage, styled: StyledText, field: ReturnType<typeof normRectToPdf>) {
+  const text = styled.text;
   const pad = Math.min(field.drawHeight * 0.15, 4);
   const availW = Math.max(field.drawWidth - pad * 2, 1);
-  const unitWidth = font.widthOfTextAtSize(text || " ", 1);
+  const unitWidth = styled.widthOf(text || " ", 1);
   const size = Math.max(4, Math.min(field.drawHeight * 0.6, availW / Math.max(unitWidth, 0.01)));
-  const textHeight = font.heightAtSize(size, { descender: false });
+  const textHeight = styled.primary.heightAtSize(size, { descender: false });
   const baselineY = (field.drawHeight - textHeight) / 2;
-  const origin = offsetRotated(field.anchor, pad, baselineY, field.rotation);
-  page.drawText(text, {
-    x: origin.x,
-    y: origin.y,
-    size,
-    font,
-    color: rgb(0.05, 0.1, 0.3),
-    rotate: degrees(field.rotation),
-  });
+  // One run per font; each run starts where the previous one ended along the (rotated) baseline.
+  let advance = 0;
+  for (const run of styled.segment(text)) {
+    const origin = offsetRotated(field.anchor, pad + advance, baselineY, field.rotation);
+    page.drawText(run.text, {
+      x: origin.x,
+      y: origin.y,
+      size,
+      font: run.font,
+      color: rgb(0.05, 0.1, 0.3),
+      rotate: degrees(field.rotation),
+    });
+    advance += run.font.widthOfTextAtSize(run.text, size);
+  }
 }
 
 function wrap(font: PDFFont, text: string, size: number, maxWidth: number): string[] {
-  const words = encodableText(font, text).split(/\s+/);
+  return wrapMeasured(encodableText(font, text), (s) => font.widthOfTextAtSize(s, size), maxWidth);
+}
+
+function wrapMeasured(text: string, width: (s: string) => number, maxWidth: number): string[] {
+  const words = text.split(/\s+/);
   const lines: string[] = [];
   let line = "";
   for (const word of words) {
     const candidate = line ? `${line} ${word}` : word;
-    if (font.widthOfTextAtSize(candidate, size) <= maxWidth || !line) {
+    if (width(candidate) <= maxWidth || !line) {
       line = candidate;
     } else {
       lines.push(line);
@@ -106,13 +116,13 @@ function wrap(font: PDFFont, text: string, size: number, maxWidth: number): stri
     }
   }
   if (line) lines.push(line);
-  // Hard-break any single token that is still too long (e.g. hashes).
+  // Hard-break any single token that is still too long (e.g. hashes, or CJK without spaces).
   return lines.flatMap((l) => {
-    if (font.widthOfTextAtSize(l, size) <= maxWidth) return [l];
+    if (width(l) <= maxWidth) return [l];
     const parts: string[] = [];
     let cur = "";
     for (const ch of l) {
-      if (font.widthOfTextAtSize(cur + ch, size) > maxWidth) {
+      if (width(cur + ch) > maxWidth) {
         parts.push(cur);
         cur = ch;
       } else cur += ch;
@@ -122,7 +132,7 @@ function wrap(font: PDFFont, text: string, size: number, maxWidth: number): stri
   });
 }
 
-function appendCertificate(doc: PDFDocument, font: PDFFont, bold: PDFFont, cert: StampInput["certificate"]) {
+function appendCertificate(doc: PDFDocument, font: PDFFont, bold: PDFFont, cert: StampInput["certificate"], resolved: Map<string, StyledText>) {
   const W = 612;
   const H = 792;
   const margin = 54;
@@ -141,10 +151,17 @@ function appendCertificate(doc: PDFDocument, font: PDFFont, bold: PDFFont, cert:
     page.drawText(heading, { x: margin, y: y - 11, size: 11, font: bold, color: rgb(0.2, 0.2, 0.2) });
     y -= 20;
     for (const row of rows) {
-      const lines = wrap(font, row.value, 9, W - margin * 2 - 150);
+      const value = resolved.get(row.value);
+      const lines = value ? wrapMeasured(value.text, (t) => value.widthOf(t, 9), W - margin * 2 - 150) : wrap(font, row.value, 9, W - margin * 2 - 150);
       ensure(lines.length * 12 + 4);
       page.drawText(encodableText(bold, row.label), { x: margin, y: y - 9, size: 9, font: bold });
-      lines.forEach((l, i) => page.drawText(l, { x: margin + 150, y: y - 9 - i * 12, size: 9, font }));
+      lines.forEach((l, i) => {
+        let x = margin + 150;
+        for (const run of value ? value.segment(l) : [{ font, text: l }]) {
+          page.drawText(run.text, { x, y: y - 9 - i * 12, size: 9, font: run.font });
+          x += run.font.widthOfTextAtSize(run.text, 9);
+        }
+      });
       y -= lines.length * 12 + 4;
     }
     y -= 10;
@@ -154,7 +171,7 @@ function appendCertificate(doc: PDFDocument, font: PDFFont, bold: PDFFont, cert:
   ensure(40);
   const note = wrap(
     font,
-    "This certificate was generated by FileSign (prototype). It records the consent, signature image and server-side event log captured for this request. It is not a qualified electronic signature and does not verify the signer's identity.",
+    "This certificate was generated by FileSign (prototype). It records the consent, signature image and server-side event log captured for this request. The SHA-256 value is an integrity fingerprint of the original file, not a cryptographic (certificate-based) PDF signature. This is not a qualified electronic signature, FileSign does not verify the signer's identity, and it makes no claim of legal or regulatory compliance.",
     8,
     W - margin * 2,
   );
@@ -167,6 +184,9 @@ export async function stampPdf(input: StampInput): Promise<Uint8Array> {
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const png = await doc.embedPng(input.signaturePng);
+  // Unicode-safe text: Helvetica whenever it can encode the string (unchanged output), otherwise
+  // a per-string Noto subset.
+  const fonts = new TextFonts(doc, font);
 
   const isolated = new Set<number>();
   for (const field of input.fields) {
@@ -190,11 +210,15 @@ export async function stampPdf(input: StampInput): Promise<Uint8Array> {
         rotate: degrees(rotation),
       });
     } else {
-      drawFittedText(page, font, field.kind === "name" ? input.signerName : input.dateText, placement);
+      drawFittedText(page, await fonts.resolve(field.kind === "name" ? input.signerName : input.dateText), placement);
     }
   }
 
-  appendCertificate(doc, font, bold, input.certificate);
+  const resolved = new Map<string, StyledText>();
+  for (const row of [...input.certificate.rows, ...input.certificate.events]) {
+    if (!resolved.has(row.value)) resolved.set(row.value, await fonts.resolve(row.value));
+  }
+  appendCertificate(doc, font, bold, input.certificate, resolved);
   doc.setModificationDate(new Date());
   doc.setProducer("FileSign prototype (pdf-lib)");
   return doc.save({ useObjectStreams: false });

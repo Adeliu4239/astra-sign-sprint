@@ -26,6 +26,19 @@ interface Props {
 
 type Phase = { kind: "form" } | { kind: "submitting" } | { kind: "done"; completedAt: string };
 
+async function checkOutcome(token: string): Promise<{ kind: "completed"; completedAt: string } | { kind: "pending" } | { kind: "unknown" }> {
+  try {
+    const res = await fetch("/api/sign/view", { method: "POST", headers: { "x-signing-token": token, "x-fs-recheck": "1" } });
+    if (!res.ok) return { kind: "unknown" };
+    const v = (await res.json()) as { status: string; completedAt: string | null };
+    if (v.status === "completed" && v.completedAt) return { kind: "completed", completedAt: v.completedAt };
+    if (v.status === "pending") return { kind: "pending" };
+    return { kind: "unknown" };
+  } catch {
+    return { kind: "unknown" };
+  }
+}
+
 /** Downloads the signed PDF with the token in a header (never in a URL). */
 export function SignedCopyButton({ token, filename }: { token: string; filename: string }) {
   const [busy, setBusy] = useState(false);
@@ -99,7 +112,23 @@ export function SignerApp({ token, clientName, filename, pageCount, fields }: Pr
       setPhase({ kind: "done", completedAt: body.completedAt });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Signing failed. Please try again.");
+      if (e instanceof TypeError) {
+        // Network failure: the request may or may not have reached the server. Ask the server
+        // for the authoritative state instead of guessing (a completed link can't be signed twice).
+        const outcome = await checkOutcome(token);
+        if (outcome.kind === "completed") {
+          setPhase({ kind: "done", completedAt: outcome.completedAt });
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
+        setError(
+          outcome.kind === "pending"
+            ? "The connection dropped before your signature reached us, so nothing was signed. Check your connection and press “Agree & sign” again."
+            : "We couldn't confirm whether your signature was recorded. Reload this page to check before signing again.",
+        );
+      } else {
+        setError(e instanceof Error ? e.message : "Signing failed. Please try again.");
+      }
       setPhase({ kind: "form" });
       inFlight.current = false;
     }
@@ -111,8 +140,8 @@ export function SignerApp({ token, clientName, filename, pageCount, fields }: Pr
         <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-100 text-2xl text-emerald-700">✓</div>
         <h2 className="mt-4 text-xl font-semibold">Document signed</h2>
         <p className="mt-2 text-sm text-slate-600">
-          Thank you, {name.trim()}. Your signature was applied to <strong>{filename}</strong> at {formatUtc(phase.completedAt)}. The sender has been
-          notified in their dashboard.
+          Thank you, {name.trim()}. Your signature was applied to <strong>{filename}</strong> at {formatUtc(phase.completedAt)}. The sender can now see
+          the signed copy in their dashboard.
         </p>
         <SignedCopyButton token={token} filename={filename} />
       </div>
@@ -205,7 +234,7 @@ export function SignerApp({ token, clientName, filename, pageCount, fields }: Pr
               {!consent ? "Tick the consent box." : ""}
             </p>
           )}
-          {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+          {error && <p role="alert" data-testid="sign-error" className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{error}</p>}
         </form>
       </aside>
     </div>

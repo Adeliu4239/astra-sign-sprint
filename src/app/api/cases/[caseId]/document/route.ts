@@ -3,12 +3,15 @@ import { HttpError, handle } from "@/lib/server/errors";
 import { requireWorkspace } from "@/lib/server/session";
 import { uploadDocument } from "@/lib/server/service";
 import { metaFrom } from "@/lib/server/http";
+import { enforceUploadStartLimit } from "@/lib/server/limits";
 
 export const maxDuration = 60;
 
 export const POST = handle(async (req: Request, ctx: { params: Promise<{ caseId: string }> }) => {
   const ws = await requireWorkspace();
   const { caseId } = await ctx.params;
+  const meta = metaFrom(req);
+  await enforceUploadStartLimit(ws.id, meta.ip);
   let form: FormData;
   try {
     form = await req.formData();
@@ -18,6 +21,6 @@ export const POST = handle(async (req: Request, ctx: { params: Promise<{ caseId:
   const file = form.get("file");
   if (!(file instanceof File)) throw new HttpError(400, "Choose a PDF file to upload.");
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const result = await uploadDocument(ws.id, caseId, bytes, file.name, file.type, metaFrom(req));
+  const result = await uploadDocument(ws.id, caseId, bytes, file.name, file.type, meta);
   return NextResponse.json(result, { status: 201 });
 });
