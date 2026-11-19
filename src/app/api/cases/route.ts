@@ -26,6 +26,7 @@ export const POST = handle(async (req: Request) => {
       title: form?.get("title"),
       clientName: form?.get("clientName"),
       clientEmail: form?.get("clientEmail"),
+      templateId: form?.get("templateId") ?? undefined,
     });
     const c = await createCase(ws.id, input, metaFrom(req));
     return NextResponse.redirect(new URL(`/cases/${c.id}`, req.url), 303);

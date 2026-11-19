@@ -26,6 +26,8 @@ Built for the Astra AI Round 2 challenge.
 - Server-side stamping, immutable signed artifact + SHA-256, signing certificate page, UTC event log
 - Not implemented: server-sent email, accounts/teams, rate limiting, multi-signer. See `docs/DECISIONS.md`
 
+**Reusable agreement templates** (on `feat/reusable-agreement-templates`; *not yet released to production*): save a PDF plus its field layout once under **Templates**, then pick it in the new-case form. Each case gets its own copy of the PDF and fields in one transaction, so later template edits or deletion never change existing cases. Direct upload stays the default. Design: `docs/PRODUCT_GAP_ANALYSIS.md`.
+
 ## Stack
 Next.js 16 (App Router, TypeScript strict) · Tailwind CSS 4 · PostgreSQL (`postgres` driver; PDFs stored privately as `bytea`) · PDF.js (viewer) · pdf-lib (stamping) · Zod (validation) · Vitest + Playwright · Vercel + Neon.
 
@@ -41,7 +43,8 @@ npm run dev                    # http://localhost:3000
 ## Checks
 ```bash
 npm run typecheck && npm run lint && npm test   # unit tests (coordinates, stamping, state machine)
-npm run test:e2e                                # Playwright suite (7 tests) against local dev server
+npm run test:integration                        # DB-backed service tests (templates); local Postgres only
+npm run test:e2e                                # Playwright suite (8 tests) against local dev server
 E2E_BASE_URL=https://<deployment> npm run test:e2e   # same suite against a deployment
 E2E_BROWSERS=chromium,webkit,firefox npm run test:e2e  # all three engines
 npx tsx scripts/make-test-pdf.ts out.pdf        # fresh synthetic 3-page PDF (mixed sizes, rotated page)

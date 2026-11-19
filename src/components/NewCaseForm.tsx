@@ -4,7 +4,23 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiError } from "@/lib/format";
 
-export function NewCaseForm({ compact = false, initialError = null }: { compact?: boolean; initialError?: string | null }) {
+export interface TemplateOption {
+  id: string;
+  name: string;
+  detail: string;
+}
+
+export function NewCaseForm({
+  compact = false,
+  initialError = null,
+  templates = [],
+  defaultTemplateId = "",
+}: {
+  compact?: boolean;
+  initialError?: string | null;
+  templates?: TemplateOption[];
+  defaultTemplateId?: string;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
@@ -16,13 +32,14 @@ export function NewCaseForm({ compact = false, initialError = null }: { compact?
     const title = String(data.get("title") ?? "");
     const clientName = String(data.get("clientName") ?? "");
     const clientEmail = String(data.get("clientEmail") ?? "");
+    const templateId = String(data.get("templateId") ?? "");
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/cases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, clientName, clientEmail }),
+        body: JSON.stringify({ title, clientName, clientEmail, templateId }),
       });
       if (!res.ok) throw new Error(await apiError(res));
       const { id } = (await res.json()) as { id: string };
@@ -47,6 +64,19 @@ export function NewCaseForm({ compact = false, initialError = null }: { compact?
         <span className="mb-1 block font-medium">Client email</span>
         <input className="input" required type="email" maxLength={200} placeholder="taylor@example.com" name="clientEmail" />
       </label>
+      {templates.length > 0 && (
+        <label className={`text-sm ${compact ? "" : "sm:col-span-3"}`}>
+          <span className="mb-1 block font-medium">Agreement</span>
+          <select className="input" name="templateId" defaultValue={defaultTemplateId} data-testid="template-select">
+            <option value="">Upload a PDF after creating the case</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                Saved template: {t.name} ({t.detail})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className={`flex items-center gap-3 ${compact ? "" : "sm:col-span-3"}`}>
         <button type="submit" className="btn-primary" disabled={busy}>
           {busy ? "Creating…" : "Create case"}
