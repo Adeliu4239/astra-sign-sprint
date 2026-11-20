@@ -1,6 +1,6 @@
 # CLAUDE.md — FileSign
 
-FileSign is a self-service agreement-signing app. An admin creates a case per client, uploads any PDF (or uses a template), places fields, and shares a single-use signing link. The server stamps the signature at the exact coordinates and stores an immutable signed PDF with hashes and an audit trail. Production: https://astra-sign-sprint.vercel.app (`main`).
+FileSign is a self-service agreement-signing app. An admin creates a case per client, uploads a standard PDF (or uses a template), places fields, and shares a single-use signing link. The server stamps the signature at the exact coordinates and stores an immutable signed PDF with hashes and an audit trail. Production: https://astra-sign-sprint.vercel.app (`main`).
 
 Read `docs/ARCHITECTURE.md` before changing server, PDF or data code. Record significant trade-offs in `docs/DESIGN_DECISIONS.md`. Workflow and commands are in `docs/DEVELOPMENT.md`.
 

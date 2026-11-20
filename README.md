@@ -1,6 +1,6 @@
 # FileSign
 
-FileSign gets a client's agreement signed on every file a company opens. An office user creates a case for a client, uploads the agreement as any PDF (or starts from a saved template), places a signature field on the right page and shares a private signing link. The client reviews and signs on any device. FileSign returns a signed PDF with the signature stamped exactly where it was placed, plus a certificate page and a server-side audit trail.
+FileSign gets a client's agreement signed on every file a company opens. An office user creates a case for a client, uploads the agreement as a standard PDF (or starts from a saved template), places a signature field on the right page and shares a private signing link. The client reviews and signs on any device. FileSign returns a signed PDF with the signature stamped exactly where it was placed, plus a certificate page and a server-side audit trail.
 
 **Live demo:** https://astra-sign-sprint.vercel.app. Click **Open demo workspace**; no sign-up is needed.
 
@@ -9,7 +9,7 @@ FileSign gets a client's agreement signed on every file a company opens. An offi
 ### Sign an arbitrary PDF
 
 1. Create a case with the client's name and email.
-2. Upload any PDF (up to 25 MB and 300 pages).
+2. Upload a standard PDF of up to 25 MB and 300 pages. Files that need a password to open, are malformed or exceed the limits are rejected with a message.
 3. Place a signature field on any page; name and date fields are optional. Drag to move, drag the corner to resize. Changes autosave.
 4. Click **Create signing link** and copy it, or open it in your mail app.
 5. The client opens the link in any browser, reviews every page, consents, draws or types a signature and submits once.
@@ -22,9 +22,9 @@ FileSign gets a client's agreement signed on every file a company opens. An offi
 3. Editing or deleting the template later never changes existing cases or links already issued.
 
 ## Features
-- **PDF intake:** validation (signature bytes, full parse, size and page limits) and chunked upload for large files. Owner-protected PDFs are decrypted; PDFs that need a password to open are rejected with instructions.
+- **PDF intake:** accepts standard PDFs of up to 25 MB and 300 pages. Every upload is validated: PDF file signature, a full parse of every page, and the size and page limits. Malformed or truncated files, non-PDF files, oversized files and PDFs that need a password to open are rejected with a clear message; Word and other formats are not converted. PDFs with only an owner password (editing restrictions) are decrypted. Files over 3 MB upload in chunks.
 - **Field placement:** correct on pages of different sizes, on rotated pages and on pages with offset crop boxes.
-- **Signing links:** 256-bit, expiring and single-use, stored only as a hash. The token sits in the URL fragment, so it never reaches server logs. Links can be revoked and reissued.
+- **Signing links:** 256-bit, expiring (14 days) and single-use. The server looks tokens up by their SHA-256 hash. While a link is pending, it also keeps an AES-256-GCM encrypted copy, keyed from `APP_SECRET`, so the admin can copy the link again; that copy is deleted when the request is completed or revoked. The token sits in the URL fragment, so it never reaches server logs. Links can be revoked and reissued.
 - **Signer page:** works on phones. Draw or type a signature, with explicit consent and protection against double submission. If the connection drops, the page asks the server whether the signature went through.
 - **Atomic completion:** the signed artifact, status change and audit events commit in one transaction. A second attempt is refused and logged.
 - **Evidence:** SHA-256 of the original and signed PDFs, a UTC event log, and a certificate page appended to the signed PDF.
