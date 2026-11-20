@@ -8,12 +8,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-## Repository rules for all agents (FileSign)
-These are binding. Details: `CLAUDE.md` § Git process and `docs/GIT_WORKFLOW.md`.
-1. Never commit or push to `main`. Work on one scoped `feat|fix|docs|test|chore/<purpose>` branch cut from an up-to-date `main`.
-2. Open a PR with summary, risk, rollback and real test evidence. Do not merge, auto-merge or deploy without the user's explicit approval. Merge by squash only.
-3. Before requesting review run `npm run typecheck && npm run lint && npm test && npm run build`. Critical-flow changes also need `npm run test:e2e`.
-4. Never force-push, rewrite history, `reset --hard` shared branches, or move tags (`round2-validated` is frozen).
-5. Production deploys only from clean `main` after approval. Then confirm the deployment's `githubCommitSha` equals HEAD and run the production E2E suite.
-6. No new features without explicit approval. Synthetic data only. Never commit secrets, `.env*` (except `.env.example`), signer tokens or links, or raw test output. Never alter stored signed PDFs or completed requests.
-7. Hard cutoff: nothing is committed, pushed, merged or deployed at or after 2026-11-20 01:21 AM EST.
+## Engineering rules for all agents (FileSign)
+Project context, invariants and the full workflow are in `CLAUDE.md` and `docs/DEVELOPMENT.md`. If guidance conflicts, `CLAUDE.md` wins.
+
+1. **Branches:** never commit or push to `main`. Work on one scoped `feat|fix|docs|test|chore/<purpose>` branch cut from an up-to-date `main`.
+2. **Merges:** open a PR with summary, risk, rollback and real test results. Never merge, auto-merge or deploy without the owner's explicit approval. Squash merge only.
+3. **Checks:** run `npm run typecheck && npm run lint && npm test && npm run build` before review. Add `npm run test:integration` for service or migration changes, and `npm run test:e2e` for critical-flow changes.
+4. **History:** never force-push, rewrite history, `reset --hard` shared branches, or move tags.
+5. **Scope:** keep changes scoped. No new features or broad refactors without approval.
+6. **Data:** use synthetic data only. Never commit secrets, `.env*` (except `.env.example`), signer tokens or links, raw test output or generated PDFs.
+7. **Never:** alter signed PDFs or completed requests, or write destructive migrations.

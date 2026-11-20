@@ -1,5 +1,5 @@
 ## What changed and why
-<!-- One scoped task. Link the issue/finding (e.g. FINAL_QA Q-3). Branch: feat|fix|docs|test|chore/<purpose> -->
+<!-- One scoped task. Link the related issue, if any. Branch: feat|fix|docs|test|chore/<purpose> -->
 
 ## Risk and rollback
 - Risk to the critical flow (upload → fields → link → sign → signed PDF → status): none / low / medium / high, and why
