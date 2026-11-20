@@ -157,7 +157,7 @@ sequenceDiagram
   participant DB
   participant Signer
   Admin->>Server: POST /api/requests/:id/send (cookie)
-  Server->>DB: store sha256(token), AES-256-GCM(token), expires_at; status=pending
+  Server->>DB: Store token hash, encrypted token and expiry (status pending)
   Server-->>Admin: https://host/sign#token
   Admin-->>Signer: share link (copy or mail app)
   Signer->>Server: POST /api/sign/view (x-signing-token)
