@@ -1,6 +1,6 @@
 /**
  * Abuse and resource limits. Chosen so an evaluator (or a real small firm) never meets them in
- * normal use, while one script cannot fill the shared database. Documented in docs/SECURITY_LIMITS.md
+ * normal use, while one script cannot fill the shared database. Documented in docs/ARCHITECTURE.md
  * and covered by tests/integration/limits.test.ts.
  */
 export const LIMITS = {

@@ -1,5 +1,5 @@
 /**
- * Unicode-safe text in signed PDFs (FINAL_QA Q-1). Verifies, by extracting text with pdf.js:
+ * Unicode-safe text in signed PDFs. Verifies, by extracting text with pdf.js:
  * Latin-1 keeps the original Helvetica path; Chinese, accented and extended Latin names render
  * as typed in the name field and on the certificate; long names fit their field; uncovered
  * scripts degrade to "?" without failing; rotation handling is unaffected.
